@@ -99,6 +99,16 @@
     "blocked_content": "Ah não! Estou bloqueado por ${url}, não é legal!",
     "hostnames_no_results": "Nenhum resultado encontrado em ${hostnames}."
   },
+  "pt-BR": {
+    "eval_first": "Um momento, vou avaliar a resposta primeiro.",
+    "search_for": "Vou pesquisar ${keywords} para reunir mais informações.",
+    "read_for": "Vou ler ${urls} para reunir mais informações.",
+    "read_for_verify": "Vou buscar o conteúdo da fonte para verificar a resposta.",
+    "late_chunk": "O conteúdo de ${url} é muito extenso, vou selecionar as partes relevantes.",
+    "final_answer": "Vou finalizar a resposta.",
+    "blocked_content": "Eita! Parece que estou bloqueado por ${url}, isso não é bom!",
+    "hostnames_no_results": "Não encontrei nenhum resultado em ${hostnames}."
+  },
   "ru": {
     "eval_first": "Подождите, я сначала оценю ответ.",
     "search_for": "Дайте мне поискать ${keywords} для сбора дополнительной информации.",
