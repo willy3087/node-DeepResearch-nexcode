@@ -21,6 +21,7 @@ interface GenerateOptions<T> {
   prompt?: string;
   system?: string;
   messages?: CoreMessage[];
+  numRetries?: number;
 }
 
 export class ObjectGeneratorSafe {
@@ -135,7 +136,12 @@ export class ObjectGeneratorSafe {
       prompt,
       system,
       messages,
+      numRetries = 0,
     } = options;
+
+    if (!model || !schema) {
+      throw new Error('Model and schema are required parameters');
+    }
 
     try {
       // Primary attempt with main model
@@ -160,36 +166,55 @@ export class ObjectGeneratorSafe {
         return errorResult;
 
       } catch (parseError) {
-        // Second fallback: Try with fallback model if provided
-        const fallbackModel = getModel('fallback');
-        if (NoObjectGeneratedError.isInstance(parseError)) {
-          const failedOutput = (parseError as any).text;
-          console.error(`${model} failed on object generation ${failedOutput} -> manual parsing failed again -> trying fallback model`);
+
+        if (numRetries > 0) {
+          console.error(`${model} failed on object generation -> manual parsing failed -> retry with ${numRetries - 1} retries remaining`);
+          return this.generateObject({
+            model,
+            schema,
+            prompt,
+            system,
+            messages,
+            numRetries: numRetries - 1
+          });
+        } else {
+          // Second fallback: Try with fallback model if provided
+          console.error(`${model} failed on object generation -> manual parsing failed -> trying fallback with distilled schema`);
           try {
+            let failedOutput = '';
+
+            if (NoObjectGeneratedError.isInstance(parseError)) {
+              failedOutput = (parseError as any).text;
+              // find last `"url":` appear in the string, which is the source of the problem
+              failedOutput = failedOutput.slice(0, Math.min(failedOutput.lastIndexOf('"url":'), 8000));
+            }
+
             // Create a distilled version of the schema without descriptions
             const distilledSchema = this.createDistilledSchema(schema);
-            // find last `"url":` appear in the string, which is the source of the problem
-            const tailoredOutput = failedOutput.slice(0, Math.min(failedOutput.lastIndexOf('"url":'), 8000));
 
             const fallbackResult = await generateObject({
-              model: fallbackModel,
+              model: getModel('fallback'),
               schema: distilledSchema,
-              prompt: `Following the given JSON schema, extract the field from below: \n\n ${tailoredOutput}`,
+              prompt: `Following the given JSON schema, extract the field from below: \n\n ${failedOutput}`,
               maxTokens: getToolConfig('fallback').maxTokens,
               temperature: getToolConfig('fallback').temperature,
             });
 
-            this.tokenTracker.trackUsage(model, fallbackResult.usage);
-            console.log('Distilled schema parse success!')
+            this.tokenTracker.trackUsage('fallback', fallbackResult.usage); // Track against fallback model
+            console.log('Distilled schema parse success!');
             return fallbackResult;
           } catch (fallbackError) {
             // If fallback model also fails, try parsing its error response
-            return await this.handleGenerateObjectError<T>(fallbackError);
+            try {
+              const lastChanceResult = await this.handleGenerateObjectError<T>(fallbackError);
+              this.tokenTracker.trackUsage('fallback', lastChanceResult.usage);
+              return lastChanceResult;
+            } catch (finalError) {
+              console.error(`All recovery mechanisms failed`);
+              throw error; // Throw original error for better debugging
+            }
           }
         }
-
-        // If no fallback model or all attempts failed, throw the original error
-        throw error;
       }
     }
   }

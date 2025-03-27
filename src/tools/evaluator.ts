@@ -12,18 +12,24 @@ function getRejectAllAnswersPrompt(question: string, answer: AnswerAction, allKn
 
   return {
     system: `
-You are a ruthless and picky answer evaluator trained to REJECT answers. You can't stand any dubious or lazy answers. 
-Given a question-answer pair, your job is to find ANY weakness in the presented answer. 
-Extremely strict standards of evidence apply. 
+You are a ruthless and picky answer evaluator trained to REJECT answers. You can't stand any shallow answers. 
+User shows you a question-answer pair, your job is to find ANY weakness in the presented answer. 
 Identity EVERY missing detail. 
 First, argue AGAINST the answer with the strongest possible case. 
 Then, argue FOR the answer. 
 Only after considering both perspectives, synthesize a final improvement plan starts with "For get a pass, you must...".
+Markdown or JSON formatting issue is never your concern and should never be mentioned in your feedback or the reason for rejection.
+
+You always endorse answers in most readable natural language format.
+If multiple sections have very similar structure, suggest another presentation format like a table to make the content more readable.
+Do not encourage deeply nested structure, flatten it into natural language sections/paragraphs or even tables. Every table should use HTML table syntax <table> <thead> <tr> <th> <td> without any CSS styling.
 
 The following knowledge items are provided for your reference. Note that some of them may not be directly related to the question/answer user provided, but may give some subtle hints and insights:
 ${KnowledgeStr.join('\n\n')}
 `,
     user: `
+Dear reviewer, I need your feedback on the following question-answer pair:
+
 <question>
 ${question}
 </question>
@@ -33,7 +39,7 @@ Here is my answer for the question:
 ${answer.answer}
 </answer>
  
-Could you please evaluate my answer based on your knowledge and strict standards? If you decide to reject the answer, please tell me how to improve it.
+Could you please evaluate it based on your knowledge and strict standards? Let me know how to improve it.
 `
   }
 }
@@ -152,8 +158,6 @@ function getFreshnessPrompt(question: string, answer: AnswerAction, currentTime:
 
 <rules>
 Question-Answer Freshness Checker Guidelines
-
-# Revised QA Type Maximum Age Table
 
 | QA Type                  | Max Age (Days) | Notes                                                                 |
 |--------------------------|--------------|-----------------------------------------------------------------------|
@@ -628,26 +632,13 @@ export async function evaluateAnswer(
   for (const evaluationType of evaluationTypes) {
     let prompt: { system: string; user: string } | undefined
     switch (evaluationType) {
-      // case 'attribution': {
-      //   if (allKnowledge.length === 0) {
-      //     return {
-      //       pass: false,
-      //       think: `The knowledge is completely empty and the answer can not be derived from it. Need to found some other references and URLs`,
-      //       type: 'attribution',
-      //     };
-      //   }
-      //   prompt = getAttributionPrompt(question, action.answer, allKnowledge);
-      //   break;
-      // }
 
       case 'definitive':
         prompt = getDefinitivePrompt(question, action.answer);
         break;
-
       case 'freshness':
         prompt = getFreshnessPrompt(question, action, new Date().toISOString());
         break;
-
       case 'plurality':
         prompt = getPluralityPrompt(question, action.answer);
         break;
@@ -675,6 +666,6 @@ export async function evaluateAnswer(
     }
   }
 
-    return result?.object as EvaluationResponse;
+  return result?.object as EvaluationResponse;
 
 }

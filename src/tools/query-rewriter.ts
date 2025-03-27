@@ -91,7 +91,7 @@ queries: [
     "q": "二手宝马价格趋势"
   },
   {
-    "q": "二手宝马vs奔驰vs丰田 性价比"
+    "q": "二手宝马vs奔驰vs奥迪 性价比"
   },
   {
     "tbs": "qdr:m",
@@ -118,12 +118,10 @@ Let me think about this from different angles... There's always a gap between th
 queries: [
   {
     "tbs": "qdr:y",
-    "gl": "us",
     "location": "Fort Collins",
     "q": "regenerative agriculture soil failures limitations"
   },
   {
-    "gl": "us",
     "location": "Ithaca",
     "q": "mycorrhizal fungi quantitative sequestration metrics"
   },
@@ -141,7 +139,6 @@ queries: [
   },
   {
     "tbs": "qdr:m",
-    "gl": "us",
     "location": "Davis",
     "q": "soil microbial inoculants research trials"
   },
@@ -192,8 +189,6 @@ queries: [
     "q": "AI最新トレンド 必須スキル"
   },
   {
-    "gl": "us",
-    "hl": "en",
     "q": "artificial intelligence literacy fundamentals"
   },
   {

@@ -5,7 +5,6 @@ import {getI18nText} from "./text-tools";
 interface ActionState {
   thisStep: StepAction;
   gaps: string[];
-  badAttempts: number;
   totalStep: number;
 }
 
@@ -14,7 +13,6 @@ export class ActionTracker extends EventEmitter {
   private state: ActionState = {
     thisStep: {action: 'answer', answer: '', references: [], think: ''},
     gaps: [],
-    badAttempts: 0,
     totalStep: 0
   };
 
@@ -39,7 +37,6 @@ export class ActionTracker extends EventEmitter {
     this.state = {
       thisStep: {action: 'answer', answer: '', references: [], think: ''},
       gaps: [],
-      badAttempts: 0,
       totalStep: 0
     };
   }

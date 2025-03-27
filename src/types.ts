@@ -51,7 +51,7 @@ export type ReflectAction = BaseAction & {
 
 export type VisitAction = BaseAction & {
   action: "visit";
-  URLTargets: string[];
+  URLTargets: number[] | string[];
 };
 
 export type CodingAction = BaseAction & {
@@ -63,6 +63,10 @@ export type StepAction = SearchAction | AnswerAction | ReflectAction | VisitActi
 
 export type EvaluationType = 'definitive' | 'freshness' | 'plurality' | 'attribution' | 'completeness' | 'strict';
 
+export type RepeatEvaluationType = {
+    type: EvaluationType;
+    numEvalsRequired: number;
+}
 
 // Following Vercel AI SDK's token counting interface
 export interface TokenUsage {
@@ -175,11 +179,20 @@ export type ErrorAnalysisResponse = {
 };
 
 
-export type SearchResult =
-  | SearchSnippet
-  | { title: string; link: string; snippet: string; weight?: number };
+export type UnNormalizedSearchSnippet = {
+  title: string;
+  url?: string;
+  description?: string;
+  link?: string;
+  snippet?: string;
+  weight?: number,
+  date?: string
+};
 
-export type SearchSnippet = { title: string; url: string; description: string; weight?: number }
+export type SearchSnippet = UnNormalizedSearchSnippet& {
+  url: string;
+  description: string;
+};
 
 export type BoostedSearchSnippet = SearchSnippet & {
   freqBoost: number;
@@ -220,6 +233,7 @@ export interface ChatCompletionRequest {
 
   boost_hostnames?: string[];
   bad_hostnames?: string[];
+  only_hostnames?: string[];
 }
 
 export interface URLAnnotation {

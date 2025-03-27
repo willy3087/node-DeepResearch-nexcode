@@ -1,16 +1,18 @@
-import {BoostedSearchSnippet, KnowledgeItem, SearchResult, SearchSnippet, TrackerContext, VisitAction} from "../types";
+import {BoostedSearchSnippet, KnowledgeItem, SearchSnippet, TrackerContext, VisitAction} from "../types";
 import {getI18nText, smartMergeStrings} from "./text-tools";
 import {rerankDocuments} from "../tools/jina-rerank";
 import {readUrl} from "../tools/read";
 import {Schemas} from "./schemas";
 import {cherryPick} from "../tools/jina-latechunk";
 import {formatDateBasedOnType} from "./date-tools";
+import {classifyText} from "../tools/jina-classify-spam";
 
 export function normalizeUrl(urlString: string, debug = false, options = {
   removeAnchors: true,
   removeSessionIDs: true,
   removeUTMParams: true,
-  removeTrackingParams: true
+  removeTrackingParams: true,
+  removeXAnalytics: true  // New option to control x.com /analytics removal
 }) {
   try {
     urlString = urlString.replace(/\s+/g, '').trim();
@@ -25,6 +27,20 @@ export function normalizeUrl(urlString: string, debug = false, options = {
 
     if (urlString.includes('example.com')) {
       throw new Error('Example URL');
+    }
+
+    // Handle x.com and twitter.com URLs with /analytics
+    if (options.removeXAnalytics) {
+      // Match with or without query parameters and fragments
+      const xComPattern = /^(https?:\/\/(www\.)?(x\.com|twitter\.com)\/([^/]+)\/status\/(\d+))\/analytics(\/)?(\?.*)?(#.*)?$/i;
+      const xMatch = urlString.match(xComPattern);
+      if (xMatch) {
+        // Preserve query parameters and fragments if present
+        let cleanUrl = xMatch[1]; // Base URL without /analytics
+        if (xMatch[7]) cleanUrl += xMatch[7]; // Add query parameters if present
+        if (xMatch[8]) cleanUrl += xMatch[8]; // Add fragment if present
+        urlString = cleanUrl;
+      }
     }
 
     const url = new URL(urlString);
@@ -144,9 +160,9 @@ export function normalizeUrl(urlString: string, debug = false, options = {
   }
 }
 
-export function filterURLs(allURLs: Record<string, SearchSnippet>, visitedURLs: string[], badHostnames: string[]): SearchSnippet[] {
+export function filterURLs(allURLs: Record<string, SearchSnippet>, visitedURLs: string[], badHostnames: string[], onlyHostnames: string[]): SearchSnippet[] {
   return Object.entries(allURLs)
-    .filter(([url,]) => !visitedURLs.includes(url) && !badHostnames.includes(extractUrlParts(url).hostname))
+    .filter(([url,]) => !visitedURLs.includes(url) && !badHostnames.includes(extractUrlParts(url).hostname) && (onlyHostnames.length === 0 || onlyHostnames.includes(extractUrlParts(url).hostname)))
     .map(([, result]) => result);
 }
 
@@ -166,7 +182,7 @@ const extractUrlParts = (urlStr: string) => {
 };
 
 // Function to count occurrences of hostnames and paths
-export const countUrlParts = (urlItems: SearchResult[]) => {
+export const countUrlParts = (urlItems: SearchSnippet[]) => {
   const hostnameCount: Record<string, number> = {};
   const pathPrefixCount: Record<string, number> = {};
   let totalUrls = 0;
@@ -315,8 +331,8 @@ export const addToAllURLs = (r: SearchSnippet, allURLs: Record<string, SearchSni
   }
 }
 
-export const weightedURLToString = (allURLs: BoostedSearchSnippet[], maxURLs = 70) => {
-  if (!allURLs || allURLs.length === 0) return '';
+export const sortSelectURLs = (allURLs: BoostedSearchSnippet[], maxURLs = 70): any[] => {
+  if (!allURLs || allURLs.length === 0) return [];
 
   return (allURLs)
     .map(r => {
@@ -329,9 +345,7 @@ export const weightedURLToString = (allURLs: BoostedSearchSnippet[], maxURLs = 7
     })
     .filter(item => item.merged !== '' && item.merged !== undefined && item.merged !== null)
     .sort((a, b) => (b.score || 0) - (a.score || 0))
-    .slice(0, maxURLs)
-    .map(item => `  + weight: ${item.score.toFixed(2)} "${item.url}": "${item.merged}"`)
-    .join('\n');
+    .slice(0, maxURLs);
 }
 
 
@@ -430,10 +444,10 @@ export async function processURLs(
   badURLs: string[],
   schemaGen: Schemas,
   question: string
-): Promise<{ urlResults: any[], success: boolean, badURLs: string[] }> {
+): Promise<{ urlResults: any[], success: boolean }> {
   // Skip if no URLs to process
   if (urls.length === 0) {
-    return {urlResults: [], success: false, badURLs: []};
+    return {urlResults: [], success: false};
   }
 
   const badHostnames: string[] = [];
@@ -468,6 +482,15 @@ export async function processURLs(
         // Early return if no valid data
         if (!data?.url || !data?.content) {
           throw new Error('No content found');
+        }
+
+        // check if content is likely a blocked msg from paywall, bot detection, etc.
+        // only check for <5000 char length content as most blocking msg is short
+        const spamDetectLength = 300;
+        const isGoodContent = data.content.length > spamDetectLength || !await classifyText(data.content);
+        if (!isGoodContent) {
+          console.error(`Blocked content ${data.content.length}:`, url, data.content.slice(0, spamDetectLength));
+          throw new Error(`Blocked content ${url}`);
         }
 
         // Add to knowledge base
@@ -521,6 +544,15 @@ export async function processURLs(
         // Only add valid URLs to visitedURLs list
         if (url) {
           visitedURLs.push(url);
+
+          // acknowledge the visit action is done for this URL
+          context.actionTracker.trackAction({
+            thisStep: {
+              action: 'visit',
+              think: '',
+              URLTargets: [url]
+            } as VisitAction
+          })
         }
       }
     })
@@ -543,7 +575,6 @@ export async function processURLs(
   return {
     urlResults: validResults,
     success: validResults.length > 0,
-    badURLs
   };
 }
 
@@ -590,4 +621,91 @@ export function fixBadURLMdLinks(mdContent: string, allURLs: Record<string, Sear
       return match;
     }
   });
+}
+
+export function extractUrlsWithDescription(text: string, contextWindowSize: number = 50): SearchSnippet[] {
+  // Using a more precise regex for URL detection that works with multilingual text
+  // This matches URLs starting with http:// or https:// but avoids capturing trailing punctuation
+  const urlPattern = /https?:\/\/(?:www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b(?:[-a-zA-Z0-9()@:%_+.~#?&//=]*)/g;
+
+  // Find all matches
+  const matches: Array<{url: string, index: number, length: number}> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = urlPattern.exec(text)) !== null) {
+    let url = match[0];
+    let length = url.length;
+
+    // Clean trailing punctuation (period, comma, etc.)
+    if (/[.,;:!?)]$/.test(url)) {
+      url = url.substring(0, url.length - 1);
+      length = url.length;
+      // Adjust lastIndex to avoid infinite loop with zero-width matches
+      urlPattern.lastIndex = match.index + length;
+    }
+
+    matches.push({
+      url,
+      index: match.index,
+      length
+    });
+  }
+
+  // If no URLs found, return empty array
+  if (matches.length === 0) {
+    return [];
+  }
+
+  // Extract context for each URL
+  const results: SearchSnippet[] = [];
+
+  for (let i = 0; i < matches.length; i++) {
+    const { url, index, length } = matches[i];
+
+    // Calculate boundaries for context
+    let startPos = Math.max(0, index - contextWindowSize);
+    let endPos = Math.min(text.length, index + length + contextWindowSize);
+
+    // Adjust boundaries to avoid overlapping with other URLs
+    if (i > 0) {
+      const prevUrl = matches[i-1];
+      if (startPos < prevUrl.index + prevUrl.length) {
+        startPos = prevUrl.index + prevUrl.length;
+      }
+    }
+
+    if (i < matches.length - 1) {
+      const nextUrl = matches[i+1];
+      if (endPos > nextUrl.index) {
+        endPos = nextUrl.index;
+      }
+    }
+
+    // Extract context
+    const beforeText = text.substring(startPos, index);
+    const afterText = text.substring(index + length, endPos);
+
+    // Combine into description
+    let description = '';
+    if (beforeText && afterText) {
+      description = `${beforeText.trim()} ... ${afterText.trim()}`;
+    } else if (beforeText) {
+      description = beforeText.trim();
+    } else if (afterText) {
+      description = afterText.trim();
+    } else {
+      description = 'No context available';
+    }
+
+    // Clean up description
+    description = description.replace(/\s+/g, ' ').trim();
+
+    results.push({
+      url,
+      description,
+      title: '' // Maintaining the title field as required by SearchSnippet interface
+    });
+  }
+
+  return results;
 }

@@ -5,7 +5,9 @@
     "read_for": "Let me read ${urls} to gather more information.",
     "read_for_verify": "Let me fetch the source content to verify the answer.",
     "late_chunk": "Content of ${url} is too long, let me cherry-pick the relevant parts.",
-    "final_answer": "Let me finalize the answer."
+    "final_answer": "Let me finalize the answer.",
+    "blocked_content": "Hmm...the content of ${url} doesn't look right, I might be blocked.",
+    "hostnames_no_results": "Can't find any results from ${hostnames}."
   },
   "zh-CN": {
     "eval_first": "等等，让我先自己评估一下答案。",
@@ -13,7 +15,9 @@
     "read_for": "让我读取网页 ${urls} 来获取更多信息。",
     "read_for_verify": "让我读取源网页内容来验证答案。",
     "late_chunk": "网页 ${url} 内容太长，我正在筛选精华部分。",
-    "final_answer": "我来整理一下答案。"
+    "final_answer": "我来整理一下答案。",
+    "blocked_content": "额…这个 ${url} 的内容不太对啊，我是不是被屏蔽了啊。",
+    "hostnames_no_results": "额… ${hostnames} 找不到什么结果啊。"
   },
   "zh-TW": {
     "eval_first": "等等，讓我先評估一下答案。",
@@ -21,7 +25,9 @@
     "read_for": "讓我閱讀 ${urls} 來獲取更多信息。",
     "read_for_verify": "讓我獲取源內容來驗證答案。",
     "late_chunk": "網頁 ${url} 內容太長，我正在挑選相關部分。",
-    "final_answer": "我來整理一下答案。"
+    "final_answer": "我來整理一下答案。",
+    "blocked_content": "咦...奇怪了，${url} 好像把我擋在門外了。有够麻烦！",
+    "hostnames_no_results": "咦... ${hostnames} 找不到什么结果。"
   },
   "ja": {
     "eval_first": "ちょっと待って、まず答えを評価します。",
@@ -29,7 +35,9 @@
     "read_for": "${urls} を読んで、情報を集めます。",
     "read_for_verify": "答えを確認するために、ソースコンテンツを取得します。",
     "late_chunk": "${url} のコンテンツが長すぎるため、関連部分を選択します。",
-    "final_answer": "答えをまとめます。"
+    "final_answer": "答えをまとめます。",
+    "blocked_content": "あれ？${url}にアクセスできないみたいです。壁にぶつかってしまいました。申し訳ありません。",
+    "hostnames_no_results": "${hostnames} から結果が見つかりません。"
   },
   "ko": {
     "eval_first": "잠시만요, 먼저 답변을 평가해 보겠습니다.",
@@ -37,7 +45,9 @@
     "read_for": "${urls} 을 읽어 더 많은 정보를 수집하겠습니다.",
     "read_for_verify": "답변을 확인하기 위해 소스 콘텐츠를 가져오겠습니다.",
     "late_chunk": "${url} 의 콘텐츠가 너무 길어, 관련 부분을 선택하겠습니다.",
-    "final_answer": "답변을 마무리하겠습니다."
+    "final_answer": "답변을 마무리하겠습니다.",
+    "blocked_content": "어라? ${url}에서 문전박대를 당했네요. 참 황당하네요!",
+    "hostnames_no_results": "${hostnames} 에서 결과를 찾을 수 없습니다."
   },
   "fr": {
     "eval_first": "Un instant, je vais d'abord évaluer la réponse.",
@@ -45,7 +55,9 @@
     "read_for": "Je vais lire ${urls} pour obtenir plus d'informations.",
     "read_for_verify": "Je vais récupérer le contenu source pour vérifier la réponse.",
     "late_chunk": "Le contenu de ${url} est trop long, je vais sélectionner les parties pertinentes.",
-    "final_answer": "Je vais finaliser la réponse."
+    "final_answer": "Je vais finaliser la réponse.",
+    "blocked_content": "Zut alors ! ${url} me met à la porte. C'est la galère !",
+    "hostnames_no_results": "Aucun résultat trouvé sur ${hostnames}."
   },
   "de": {
     "eval_first": "Einen Moment, ich werde die Antwort zuerst evaluieren.",
@@ -53,7 +65,9 @@
     "read_for": "Ich werde ${urls} lesen, um weitere Informationen zu sammeln.",
     "read_for_verify": "Ich werde den Quellinhalt abrufen, um die Antwort zu überprüfen.",
     "late_chunk": "Der Inhalt von ${url} ist zu lang, ich werde die relevanten Teile auswählen.",
-    "final_answer": "Ich werde die Antwort abschließen."
+    "final_answer": "Ich werde die Antwort abschließen.",
+    "blocked_content": "Mist! ${url} lässt mich nicht rein.",
+    "hostnames_no_results": "Keine Ergebnisse von ${hostnames} gefunden."
   },
   "es": {
     "eval_first": "Un momento, voy a evaluar la respuesta primero.",
@@ -61,7 +75,9 @@
     "read_for": "Voy a leer ${urls} para recopilar más información.",
     "read_for_verify": "Voy a obtener el contenido fuente para verificar la respuesta.",
     "late_chunk": "El contenido de ${url} es demasiado largo, voy a seleccionar las partes relevantes.",
-    "final_answer": "Voy a finalizar la respuesta."
+    "final_answer": "Voy a finalizar la respuesta.",
+    "blocked_content": "¡Oh no! Estoy bloqueado por ${url}, ¡no es genial!",
+    "hostnames_no_results": "No se encontraron resultados de ${hostnames}."
   },
   "it": {
     "eval_first": "Un attimo, valuterò prima la risposta.",
@@ -69,7 +85,9 @@
     "read_for": "Leggerò ${urls} per raccogliere ulteriori informazioni.",
     "read_for_verify": "Recupererò il contenuto sorgente per verificare la risposta.",
     "late_chunk": "Il contenuto di ${url} è troppo lungo, selezionerò le parti rilevanti.",
-    "final_answer": "Finalizzerò la risposta."
+    "final_answer": "Finalizzerò la risposta.",
+    "blocked_content": "Mannaggia! Sono bloccato da ${url}, non è bello!",
+    "hostnames_no_results": "Nessun risultato trovato da ${hostnames}."
   },
   "pt": {
     "eval_first": "Um momento, vou avaliar a resposta primeiro.",
@@ -77,7 +95,9 @@
     "read_for": "Vou ler ${urls} para reunir mais informações.",
     "read_for_verify": "Vou buscar o conteúdo da fonte para verificar a resposta.",
     "late_chunk": "O conteúdo de ${url} é muito longo, vou selecionar as partes relevantes.",
-    "final_answer": "Vou finalizar a resposta."
+    "final_answer": "Vou finalizar a resposta.",
+    "blocked_content": "Ah não! Estou bloqueado por ${url}, não é legal!",
+    "hostnames_no_results": "Nenhum resultado encontrado em ${hostnames}."
   },
   "ru": {
     "eval_first": "Подождите, я сначала оценю ответ.",
@@ -85,14 +105,18 @@
     "read_for": "Дайте мне прочитать ${urls} для сбора дополнительной информации.",
     "read_for_verify": "Дайте мне получить исходный контент для проверки ответа.",
     "late_chunk": "Содержимое ${url} слишком длинное, я выберу только значимые части.",
-    "final_answer": "Дайте мне завершить ответ."
+    "final_answer": "Дайте мне завершить ответ.",
+    "blocked_content": "Ой! Меня заблокировал ${url}, не круто!",
+    "hostnames_no_results": "Ничего не найдено на ${hostnames}."
   },
   "ar": {
     "eval_first": "لكن انتظر، دعني أقوم بتقييم الإجابة أولاً.",
     "search_for": "دعني أبحث عن ${keywords} لجمع المزيد من المعلومات.",
     "read_for": "دعني أقرأ ${urls} لجمع المزيد من المعلومات.",
     "read_for_verify": "دعني أحضر محتوى المصدر للتحقق من الإجابة.",
-    "late_chunk": "محتوى ${url} طويل جدًا، سأختار الأجزاء ذات الصلة."
+    "late_chunk": "محتوى ${url} طويل جدًا، سأختار الأجزاء ذات الصلة.",
+    "blocked_content": "أوه لا! أنا محظور من ${url}، ليس جيدًا!",
+    "hostnames_no_results": "لا يمكن العثور على أي نتائج من ${hostnames}."
   },
   "nl": {
     "eval_first": "Een moment, ik zal het antwoord eerst evalueren.",
@@ -100,7 +124,9 @@
     "read_for": "Ik zal ${urls} lezen om meer informatie te verzamelen.",
     "read_for_verify": "Ik zal de broninhoud ophalen om het antwoord te verifiëren.",
     "late_chunk": "De inhoud van ${url} is te lang, ik zal de relevante delen selecteren.",
-    "final_answer": "Ik zal het antwoord afronden."
+    "final_answer": "Ik zal het antwoord afronden.",
+    "blocked_content": "Verdorie! Ik word geblokkeerd door ${url}.",
+    "hostnames_no_results": "Geen resultaten gevonden van ${hostnames}."
   },
   "zh": {
     "eval_first": "等等，让我先评估一下答案。",
@@ -108,6 +134,8 @@
     "read_for": "让我阅读 ${urls} 来获取更多信息。",
     "read_for_verify": "让我获取源内容来验证答案。",
     "late_chunk": "网页 ${url} 内容太长，我正在筛选精华部分。",
-    "final_answer": "我来整理一下答案。"
+    "final_answer": "我来整理一下答案。",
+    "blocked_content": "额…这个内容不太对啊，我感觉被 ${url} 屏蔽了。",
+    "hostnames_no_results": "额… ${hostnames} 找不到什么结果啊。"
   }
 }

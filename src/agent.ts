@@ -14,10 +14,9 @@ import {
   StepAction,
   AnswerAction,
   KnowledgeItem,
-  SearchResult,
   EvaluationType,
   BoostedSearchSnippet,
-  SearchSnippet, EvaluationResponse, Reference, SERPQuery
+  SearchSnippet, EvaluationResponse, Reference, SERPQuery, RepeatEvaluationType, UnNormalizedSearchSnippet
 } from "./types";
 import {TrackerContext} from "./types";
 import {search} from "./tools/jina-search";
@@ -31,17 +30,18 @@ import {
   rankURLs,
   filterURLs,
   normalizeUrl,
-  weightedURLToString, getLastModified, keepKPerHostname, processURLs, fixBadURLMdLinks
+  sortSelectURLs, getLastModified, keepKPerHostname, processURLs, fixBadURLMdLinks, extractUrlsWithDescription
 } from "./utils/url-tools";
 import {
   buildMdFromAnswer,
-  chooseK, fixCodeBlockIndentation,
+  chooseK, convertHtmlTablesToMd, fixCodeBlockIndentation,
   removeExtraLineBreaks,
-  removeHTMLtags
+  removeHTMLtags, repairMarkdownFinal, repairMarkdownFootnotesOuter
 } from "./utils/text-tools";
 import {MAX_QUERIES_PER_STEP, MAX_REFLECT_PER_STEP, MAX_URLS_PER_STEP, Schemas} from "./utils/schemas";
 import {formatDateBasedOnType, formatDateRange} from "./utils/date-tools";
 import {fixMarkdown} from "./tools/md-fixer";
+import {repairUnknownChars} from "./tools/broken-ch-fixer";
 
 async function sleep(ms: number) {
   const seconds = Math.ceil(ms / 1000);
@@ -66,6 +66,7 @@ ${k.references && k.type === 'url' ? `
 ${k.references[0]}
 </url>
 ` : ''}
+
 
 ${k.answer}
       `.trim();
@@ -111,7 +112,7 @@ function getPrompt(
   knowledge?: KnowledgeItem[],
   allURLs?: BoostedSearchSnippet[],
   beastMode?: boolean,
-): string {
+): { system: string, urlList?: string[] } {
   const sections: string[] = [];
   const actionSections: string[] = [];
 
@@ -136,19 +137,20 @@ ${context.join('\n')}
 
   // Build actions section
 
-  if (allowRead) {
-    const urlList = weightedURLToString(allURLs || [], 20);
+  const urlList = sortSelectURLs(allURLs || [], 20);
+  if (allowRead && urlList.length > 0) {
+    const urlListStr = urlList
+      .map((item, idx) => `  - [idx=${idx + 1}] [weight=${item.score.toFixed(2)}] "${item.url}": "${item.merged.slice(0, 50)}"`)
+      .join('\n')
 
     actionSections.push(`
 <action-visit>
 - Crawl and read full content from URLs, you can get the fulltext, last updated datetime etc of any URL.  
-- Must check URLs mentioned in <question> if any
-${urlList ? `    
+- Must check URLs mentioned in <question> if any    
 - Choose and visit relevant URLs below for more knowledge. higher weight suggests more relevant:
 <url-list>
-${urlList}
+${urlListStr}
 </url-list>
-`.trim() : ''}
 </action-visit>
 `);
   }
@@ -228,7 +230,10 @@ ${actionSections.join('\n\n')}
   // Add footer
   sections.push(`Think step by step, choose the action, then respond by matching the schema of that action.`);
 
-  return removeExtraLineBreaks(sections.join('\n\n'));
+  return {
+    system: removeExtraLineBreaks(sections.join('\n\n')),
+    urlList: urlList.map(u => u.url)
+  };
 }
 
 
@@ -253,7 +258,7 @@ async function updateReferences(thisStep: AnswerAction, allURLs: Record<string, 
           .replace(/\s+/g, ' '),
         title: allURLs[normalizedUrl]?.title || '',
         url: normalizedUrl,
-        dateTime: ref?.dateTime || ''
+        dateTime: ref?.dateTime || allURLs[normalizedUrl]?.date || '',
       };
     })
     .filter(Boolean) as Reference[]; // Add type assertion here
@@ -271,7 +276,8 @@ async function executeSearchQueries(
   keywordsQueries: any[],
   context: TrackerContext,
   allURLs: Record<string, SearchSnippet>,
-  SchemaGen: any
+  SchemaGen: Schemas,
+  onlyHostnames?: string[]
 ): Promise<{
   newKnowledge: KnowledgeItem[],
   searchedQueries: string[]
@@ -282,8 +288,11 @@ async function executeSearchQueries(
   context.actionTracker.trackThink('search_for', SchemaGen.languageCode, {keywords: uniqQOnly.join(', ')});
   let utilityScore = 0;
   for (const query of keywordsQueries) {
-    let results: SearchResult[] = [];
+    let results: UnNormalizedSearchSnippet[] = [];
     const oldQuery = query.q;
+    if (onlyHostnames && onlyHostnames.length > 0) {
+      query.q = `${query.q} site:${onlyHostnames.join(' OR site:')}`;
+    }
 
     try {
       console.log('Search query:', query);
@@ -316,15 +325,16 @@ async function executeSearchQueries(
 
     const minResults: SearchSnippet[] = results
       .map(r => {
-        const url = normalizeUrl('url' in r ? r.url : r.link);
+        const url = normalizeUrl('url' in r ? r.url! : r.link!);
         if (!url) return null; // Skip invalid URLs
 
         return {
           title: r.title,
           url,
           description: 'description' in r ? r.description : r.snippet,
-          weight: 1
-        };
+          weight: 1,
+          date: r.date,
+        } as SearchSnippet;
       })
       .filter(Boolean) as SearchSnippet[]; // Filter out null entries and assert type
 
@@ -341,10 +351,16 @@ async function executeSearchQueries(
       updated: query.tbs ? formatDateRange(query) : undefined
     });
   }
-
-  console.log(`Utility/Queries: ${utilityScore}/${searchedQueries.length}`);
-  if (searchedQueries.length > MAX_QUERIES_PER_STEP) {
-    console.log(`So many queries??? ${searchedQueries.map(q => `"${q}"`).join(', ')}`)
+  if (searchedQueries.length === 0) {
+    if (onlyHostnames && onlyHostnames.length > 0) {
+      console.log(`No results found for queries: ${uniqQOnly.join(', ')} on hostnames: ${onlyHostnames.join(', ')}`);
+      context.actionTracker.trackThink('hostnames_no_results', SchemaGen.languageCode, {hostnames: onlyHostnames.join(', ')});
+    }
+  } else {
+    console.log(`Utility/Queries: ${utilityScore}/${searchedQueries.length}`);
+    if (searchedQueries.length > MAX_QUERIES_PER_STEP) {
+      console.log(`So many queries??? ${searchedQueries.map(q => `"${q}"`).join(', ')}`)
+    }
   }
   return {
     newKnowledge,
@@ -352,21 +368,24 @@ async function executeSearchQueries(
   };
 }
 
+function includesEval(allChecks: RepeatEvaluationType[], evalType: EvaluationType): boolean {
+  return allChecks.some(c => c.type === evalType);
+}
 
 export async function getResponse(question?: string,
                                   tokenBudget: number = 1_000_000,
-                                  maxBadAttempts: number = 3,
+                                  maxBadAttempts: number = 2,
                                   existingContext?: Partial<TrackerContext>,
                                   messages?: Array<CoreMessage>,
                                   numReturnedURLs: number = 100,
                                   noDirectAnswer: boolean = false,
                                   boostHostnames: string[] = [],
                                   badHostnames: string[] = [],
+                                  onlyHostnames: string[] = []
 ): Promise<{ result: StepAction; context: TrackerContext; visitedURLs: string[], readURLs: string[], allURLs: string[] }> {
 
   let step = 0;
   let totalStep = 0;
-  let badAttempts = 0;
 
   question = question?.trim() as string;
   // remove incoming system messages to avoid override
@@ -406,21 +425,36 @@ export async function getResponse(question?: string,
   let allowSearch = true;
   let allowRead = true;
   let allowReflect = true;
-  let allowCoding = true;
-  let system = '';
-  let maxStrictEvals = Math.max(1, Math.min(3, maxBadAttempts - 1));
+  let allowCoding = false;
   let msgWithKnowledge: CoreMessage[] = [];
   let thisStep: StepAction = {action: 'answer', answer: '', references: [], think: '', isFinal: false};
 
   const allURLs: Record<string, SearchSnippet> = {};
   const visitedURLs: string[] = [];
   const badURLs: string[] = [];
-  const evaluationMetrics: Record<string, EvaluationType[]> = {};
+  const evaluationMetrics: Record<string, RepeatEvaluationType[]> = {};
   // reserve the 10% final budget for the beast mode
   const regularBudget = tokenBudget * 0.85;
   const finalAnswerPIP: string[] = [];
   let trivialQuestion = false;
-  while (context.tokenTracker.getTotalUsage().totalTokens < regularBudget && badAttempts <= maxBadAttempts) {
+
+  // add all mentioned URLs in messages to allURLs
+  messages.forEach(m => {
+    let strMsg = '';
+    if (typeof m.content === 'string') {
+      strMsg = m.content.trim();
+    } else if (typeof m.content === 'object' && Array.isArray(m.content)) {
+      // find the very last sub content whose 'type' is 'text'  and use 'text' as the question
+      strMsg = m.content.filter(c => c.type === 'text').map(c => c.text).join('\n').trim();
+    }
+
+    extractUrlsWithDescription(strMsg).forEach(u => {
+      addToAllURLs(u, allURLs);
+    });
+  })
+
+
+  while (context.tokenTracker.getTotalUsage().totalTokens < regularBudget) {
     // add 1s delay to avoid rate limiting
     step++;
     totalStep++;
@@ -437,25 +471,29 @@ export async function getResponse(question?: string,
     if (currentQuestion.trim() === question && totalStep === 1) {
       // only add evaluation for initial question, once at step 1
       evaluationMetrics[currentQuestion] =
-        await evaluateQuestion(currentQuestion, context, SchemaGen)
+        (await evaluateQuestion(currentQuestion, context, SchemaGen)).map(e => {
+          return {
+            type: e,
+            numEvalsRequired: maxBadAttempts
+          } as RepeatEvaluationType
+        })
       // force strict eval for the original question, at last, only once.
-      evaluationMetrics[currentQuestion].push('strict')
+      evaluationMetrics[currentQuestion].push({type: 'strict', numEvalsRequired: maxBadAttempts});
     } else if (currentQuestion.trim() !== question) {
       evaluationMetrics[currentQuestion] = []
     }
 
-    if (totalStep === 1 && evaluationMetrics[currentQuestion].includes('freshness')) {
+    if (totalStep === 1 && includesEval(evaluationMetrics[currentQuestion], 'freshness')) {
       // if it detects freshness, avoid direct answer at step 1
       allowAnswer = false;
       allowReflect = false;
     }
 
-    // update all urls with buildURLMap
-    // allowRead = allowRead && (Object.keys(allURLs).length > 0);
+
     if (allURLs && Object.keys(allURLs).length > 0) {
       // rerank urls
       weightedURLs = rankURLs(
-        filterURLs(allURLs, visitedURLs, badHostnames),
+        filterURLs(allURLs, visitedURLs, badHostnames, onlyHostnames),
         {
           question: currentQuestion,
           boostHostnames
@@ -464,11 +502,12 @@ export async function getResponse(question?: string,
       weightedURLs = keepKPerHostname(weightedURLs, 2);
       console.log('Weighted URLs:', weightedURLs.length);
     }
+    allowRead = allowRead && (weightedURLs.length > 0);
 
     allowSearch = allowSearch && (weightedURLs.length < 200);  // disable search when too many urls already
 
     // generate prompt for this step
-    system = getPrompt(
+    const {system, urlList} = getPrompt(
       diaryContext,
       allQuestions,
       allKeywords,
@@ -488,6 +527,7 @@ export async function getResponse(question?: string,
       schema,
       system,
       messages: msgWithKnowledge,
+      numRetries: 2,
     });
     thisStep = {
       action: result.object.action,
@@ -499,14 +539,14 @@ export async function getResponse(question?: string,
     console.log(`${currentQuestion}: ${thisStep.action} <- [${actionsStr}]`);
     console.log(thisStep)
 
-    context.actionTracker.trackAction({totalStep, thisStep, gaps, badAttempts});
+    context.actionTracker.trackAction({totalStep, thisStep, gaps});
 
     // reset allow* to true
     allowAnswer = true;
     allowReflect = true;
     allowRead = true;
     allowSearch = true;
-    // allowCoding = true;
+    allowCoding = true;
 
     // execute the step and action
     if (thisStep.action === 'answer' && thisStep.answer) {
@@ -552,7 +592,7 @@ export async function getResponse(question?: string,
         evaluation = await evaluateAnswer(
           currentQuestion,
           thisStep,
-          evaluationMetrics[currentQuestion],
+          evaluationMetrics[currentQuestion].map(e => e.type),
           context,
           allKnowledge,
           SchemaGen
@@ -560,6 +600,9 @@ export async function getResponse(question?: string,
       }
 
       if (currentQuestion.trim() === question) {
+        // disable coding for preventing answer degradation
+        allowCoding = false;
+
         if (evaluation.pass) {
           diaryContext.push(`
 At step ${step}, you took **answer** action and finally found the answer to the original question:
@@ -578,20 +621,25 @@ Your journey ends here. You have successfully answered the original question. Co
           thisStep.isFinal = true;
           break
         } else {
+          // lower numEvalsRequired for the failed evaluation and if numEvalsRequired is 0, remove it from the evaluation metrics
+          evaluationMetrics[currentQuestion] = evaluationMetrics[currentQuestion].map(e => {
+            if (e.type === evaluation.type) {
+              e.numEvalsRequired--;
+            }
+            return e;
+          }).filter(e => e.numEvalsRequired > 0);
+
           if (evaluation.type === 'strict' && evaluation.improvement_plan) {
             finalAnswerPIP.push(evaluation.improvement_plan);
-            maxStrictEvals--;
-            if (maxStrictEvals <= 0) {
-              // remove 'strict' from the evaluation metrics
-              console.log('Remove `strict` from evaluation metrics')
-              evaluationMetrics[currentQuestion] = evaluationMetrics[currentQuestion].filter(e => e !== 'strict');
-            }
           }
-          if (badAttempts >= maxBadAttempts) {
+
+          if (evaluationMetrics[currentQuestion].length === 0) {
+            // failed so many times, give up, route to beast mode
             thisStep.isFinal = false;
             break
-          } else {
-            diaryContext.push(`
+          }
+
+          diaryContext.push(`
 At step ${step}, you took **answer** action but evaluator thinks it is not a good answer:
 
 Original question: 
@@ -603,11 +651,11 @@ ${thisStep.answer}
 The evaluator thinks your answer is bad because: 
 ${evaluation.think}
 `);
-            // store the bad context and reset the diary context
-            const errorAnalysis = await analyzeSteps(diaryContext, context, SchemaGen);
+          // store the bad context and reset the diary context
+          const errorAnalysis = await analyzeSteps(diaryContext, context, SchemaGen);
 
-            allKnowledge.push({
-              question: `
+          allKnowledge.push({
+            question: `
 Why is the following answer bad for the question? Please reflect
 
 <question>
@@ -618,7 +666,7 @@ ${currentQuestion}
 ${thisStep.answer}
 </answer>
 `,
-              answer: `
+            answer: `
 ${evaluation.think}
 
 ${errorAnalysis.recap}
@@ -627,14 +675,12 @@ ${errorAnalysis.blame}
 
 ${errorAnalysis.improvement}
 `,
-              type: 'qa',
-            })
+            type: 'qa',
+          })
 
-            badAttempts++;
-            allowAnswer = false;  // disable answer action in the immediate next step
-            diaryContext = [];
-            step = 0;
-          }
+          allowAnswer = false;  // disable answer action in the immediate next step
+          diaryContext = [];
+          step = 0;
         }
       } else if (evaluation.pass) {
         // solved a gap question
@@ -729,25 +775,28 @@ But then you realized you have asked them before. You decided to to think out of
             keywordsQueries,
             context,
             allURLs,
-            SchemaGen
+            SchemaGen,
+            onlyHostnames
           );
 
-        allKeywords.push(...searchedQueries);
-        allKnowledge.push(...newKnowledge);
+        if (searchedQueries.length > 0) {
+          anyResult = true;
+          allKeywords.push(...searchedQueries);
+          allKnowledge.push(...newKnowledge);
 
-        diaryContext.push(`
+          diaryContext.push(`
 At step ${step}, you took the **search** action and look for external information for the question: "${currentQuestion}".
 In particular, you tried to search for the following keywords: "${keywordsQueries.map(q => q.q).join(', ')}".
 You found quite some information and add them to your URL list and **visit** them later when needed. 
 `);
 
-        updateContext({
-          totalStep,
-          question: currentQuestion,
-          ...thisStep,
-          result: result
-        });
-        anyResult = true;
+          updateContext({
+            totalStep,
+            question: currentQuestion,
+            ...thisStep,
+            result: result
+          });
+        }
       }
       if (!anyResult || !keywordsQueries?.length) {
         diaryContext.push(`
@@ -764,13 +813,13 @@ You decided to think out of the box or cut from a completely different angle.
         });
       }
       allowSearch = false;
-    } else if (thisStep.action === 'visit' && thisStep.URLTargets?.length) {
+    } else if (thisStep.action === 'visit' && thisStep.URLTargets?.length && urlList?.length) {
       // normalize URLs
-      thisStep.URLTargets = thisStep.URLTargets
-        .map(url => normalizeUrl(url))
+      thisStep.URLTargets = (thisStep.URLTargets as number[])
+        .map(idx => normalizeUrl(urlList[idx - 1]))
         .filter(url => url && !visitedURLs.includes(url)) as string[];
 
-      thisStep.URLTargets = [...new Set([...thisStep.URLTargets, ...weightedURLs.map(r => r.url)])].slice(0, MAX_URLS_PER_STEP);
+      thisStep.URLTargets = [...new Set([...thisStep.URLTargets, ...weightedURLs.map(r => r.url!)])].slice(0, MAX_URLS_PER_STEP);
 
       const uniqueURLs = thisStep.URLTargets;
       console.log(uniqueURLs)
@@ -864,21 +913,12 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
     await sleep(STEP_SLEEP);
   }
 
-  await storeContext(system, schema, {
-    allContext,
-    allKeywords,
-    allQuestions,
-    allKnowledge,
-    weightedURLs,
-    msgWithKnowledge
-  }, totalStep);
-
   if (!(thisStep as AnswerAction).isFinal) {
     console.log('Enter Beast mode!!!')
     // any answer is better than no answer, humanity last resort
     step++;
     totalStep++;
-    system = getPrompt(
+    const {system} = getPrompt(
       diaryContext,
       allQuestions,
       allKeywords,
@@ -898,7 +938,8 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
       model: 'agentBeastMode',
       schema,
       system,
-      messages: msgWithKnowledge
+      messages: msgWithKnowledge,
+      numRetries: 2
     });
     thisStep = {
       action: result.object.action,
@@ -907,37 +948,34 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
     } as AnswerAction;
     await updateReferences(thisStep, allURLs);
     (thisStep as AnswerAction).isFinal = true;
-    context.actionTracker.trackAction({totalStep, thisStep, gaps, badAttempts});
+    context.actionTracker.trackAction({totalStep, thisStep, gaps});
   }
 
   if (!trivialQuestion) {
     (thisStep as AnswerAction).mdAnswer =
-      fixBadURLMdLinks(
-        fixCodeBlockIndentation(
-          await fixMarkdown(
-            buildMdFromAnswer((thisStep as AnswerAction)),
-            allKnowledge,
-            context,
-            SchemaGen
-          )
-        ),
-        allURLs);
+      repairMarkdownFinal(
+        convertHtmlTablesToMd(
+          fixBadURLMdLinks(
+            fixCodeBlockIndentation(
+              repairMarkdownFootnotesOuter(
+                await repairUnknownChars(
+                  await fixMarkdown(
+                    buildMdFromAnswer((thisStep as AnswerAction)),
+                    allKnowledge,
+                    context,
+                    SchemaGen
+                  ), context))
+            ),
+            allURLs)));
   } else {
-    (thisStep as AnswerAction).mdAnswer = fixCodeBlockIndentation(
-      buildMdFromAnswer((thisStep as AnswerAction))
-    );
+    (thisStep as AnswerAction).mdAnswer =
+      convertHtmlTablesToMd(
+        fixCodeBlockIndentation(
+          buildMdFromAnswer((thisStep as AnswerAction)))
+      );
   }
 
   console.log(thisStep)
-
-  await storeContext(system, schema, {
-    allContext,
-    allKeywords,
-    allQuestions,
-    allKnowledge,
-    weightedURLs,
-    msgWithKnowledge
-  }, totalStep);
 
   // max return 300 urls
   const returnedURLs = weightedURLs.slice(0, numReturnedURLs).map(r => r.url);
@@ -993,7 +1031,6 @@ ${JSON.stringify(zodToJsonSchema(schema), null, 2)}
     console.error('Context storage failed:', error);
   }
 }
-
 
 export async function main() {
   const question = process.argv[2] || "";
