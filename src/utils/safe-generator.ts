@@ -1,14 +1,14 @@
-import {z} from 'zod';
+import { z } from "zod";
 import {
   CoreMessage,
   generateObject,
   LanguageModelUsage,
   NoObjectGeneratedError,
-  Schema
+  Schema,
 } from "ai";
-import {TokenTracker} from "./token-tracker";
-import {getModel, ToolName, getToolConfig} from "../config";
-import Hjson from 'hjson'; // Import Hjson library
+import { TokenTracker } from "./token-tracker";
+import { getModel, ToolName, getToolConfig } from "../config";
+import Hjson from "hjson"; // Import Hjson library
 
 interface GenerateObjectResult<T> {
   object: T;
@@ -35,14 +35,16 @@ export class ObjectGeneratorSafe {
    * Creates a distilled version of a schema by removing all descriptions
    * This makes the schema simpler for fallback parsing scenarios
    */
-  private createDistilledSchema<T>(schema: z.ZodType<T> | Schema<T>): z.ZodType<T> | Schema<T> {
+  private createDistilledSchema<T>(
+    schema: z.ZodType<T> | Schema<T>
+  ): z.ZodType<T> | Schema<T> {
     // For zod schemas
     if (schema instanceof z.ZodType) {
       return this.stripZodDescriptions(schema);
     }
 
     // For AI SDK Schema objects
-    if (typeof schema === 'object' && schema !== null) {
+    if (typeof schema === "object" && schema !== null) {
       return this.stripSchemaDescriptions(schema as Schema<T>);
     }
 
@@ -69,7 +71,9 @@ export class ObjectGeneratorSafe {
     }
 
     if (zodSchema instanceof z.ZodArray) {
-      return z.array(this.stripZodDescriptions(zodSchema._def.type)) as unknown as z.ZodType<T>;
+      return z.array(
+        this.stripZodDescriptions(zodSchema._def.type)
+      ) as unknown as z.ZodType<T>;
     }
 
     if (zodSchema instanceof z.ZodString) {
@@ -77,7 +81,10 @@ export class ObjectGeneratorSafe {
       return z.string() as unknown as z.ZodType<T>;
     }
 
-    if (zodSchema instanceof z.ZodUnion || zodSchema instanceof z.ZodIntersection) {
+    if (
+      zodSchema instanceof z.ZodUnion ||
+      zodSchema instanceof z.ZodIntersection
+    ) {
       // These are more complex schemas that would need special handling
       // This is a simplified implementation
       return zodSchema;
@@ -97,7 +104,7 @@ export class ObjectGeneratorSafe {
 
     // Recursively remove description properties
     const removeDescriptions = (obj: any) => {
-      if (typeof obj !== 'object' || obj === null) return;
+      if (typeof obj !== "object" || obj === null) return;
 
       if (obj.properties) {
         for (const key in obj.properties) {
@@ -129,18 +136,13 @@ export class ObjectGeneratorSafe {
     return clonedSchema;
   }
 
-  async generateObject<T>(options: GenerateOptions<T>): Promise<GenerateObjectResult<T>> {
-    const {
-      model,
-      schema,
-      prompt,
-      system,
-      messages,
-      numRetries = 0,
-    } = options;
+  async generateObject<T>(
+    options: GenerateOptions<T>
+  ): Promise<GenerateObjectResult<T>> {
+    const { model, schema, prompt, system, messages, numRetries = 0 } = options;
 
     if (!model || !schema) {
-      throw new Error('Model and schema are required parameters');
+      throw new Error("Model and schema are required parameters");
     }
 
     try {
@@ -157,57 +159,65 @@ export class ObjectGeneratorSafe {
 
       this.tokenTracker.trackUsage(model, result.usage);
       return result;
-
     } catch (error) {
       // First fallback: Try manual parsing of the error response
       try {
         const errorResult = await this.handleGenerateObjectError<T>(error);
         this.tokenTracker.trackUsage(model, errorResult.usage);
         return errorResult;
-
       } catch (parseError) {
-
         if (numRetries > 0) {
-          console.error(`${model} failed on object generation -> manual parsing failed -> retry with ${numRetries - 1} retries remaining`);
+          console.error(
+            `${model} failed on object generation -> manual parsing failed -> retry with ${
+              numRetries - 1
+            } retries remaining`
+          );
           return this.generateObject({
             model,
             schema,
             prompt,
             system,
             messages,
-            numRetries: numRetries - 1
+            numRetries: numRetries - 1,
           });
         } else {
           // Second fallback: Try with fallback model if provided
-          console.error(`${model} failed on object generation -> manual parsing failed -> trying fallback with distilled schema`);
+          console.error(
+            `${model} failed on object generation -> manual parsing failed -> trying fallback with distilled schema`
+          );
           try {
-            let failedOutput = '';
+            let failedOutput = "";
 
             if (NoObjectGeneratedError.isInstance(parseError)) {
               failedOutput = (parseError as any).text;
               // find last `"url":` appear in the string, which is the source of the problem
-              failedOutput = failedOutput.slice(0, Math.min(failedOutput.lastIndexOf('"url":'), 8000));
+              failedOutput = failedOutput.slice(
+                0,
+                Math.min(failedOutput.lastIndexOf('"url":'), 8000)
+              );
             }
 
             // Create a distilled version of the schema without descriptions
             const distilledSchema = this.createDistilledSchema(schema);
 
             const fallbackResult = await generateObject({
-              model: getModel('fallback'),
+              model: getModel("fallback"),
               schema: distilledSchema,
               prompt: `Following the given JSON schema, extract the field from below: \n\n ${failedOutput}`,
-              maxTokens: getToolConfig('fallback').maxTokens,
-              temperature: getToolConfig('fallback').temperature,
+              maxTokens: getToolConfig("fallback").maxTokens,
+              temperature: getToolConfig("fallback").temperature,
             });
 
-            this.tokenTracker.trackUsage('fallback', fallbackResult.usage); // Track against fallback model
-            console.log('Distilled schema parse success!');
+            this.tokenTracker.trackUsage("fallback", fallbackResult.usage); // Track against fallback model
+            console.log("Distilled schema parse success!");
             return fallbackResult;
           } catch (fallbackError) {
             // If fallback model also fails, try parsing its error response
             try {
-              const lastChanceResult = await this.handleGenerateObjectError<T>(fallbackError);
-              this.tokenTracker.trackUsage('fallback', lastChanceResult.usage);
+              const lastChanceResult = await this.handleGenerateObjectError<T>(
+                fallbackError
+              );
+              this.tokenTracker.trackUsage("fallback", lastChanceResult.usage);
               return lastChanceResult;
             } catch (finalError) {
               console.error(`All recovery mechanisms failed`);
@@ -219,29 +229,137 @@ export class ObjectGeneratorSafe {
     }
   }
 
-  private async handleGenerateObjectError<T>(error: unknown): Promise<GenerateObjectResult<T>> {
+  private async handleGenerateObjectError<T>(
+    error: unknown
+  ): Promise<GenerateObjectResult<T>> {
     if (NoObjectGeneratedError.isInstance(error)) {
-      console.error('Object not generated according to schema, fallback to manual parsing');
+      console.error(
+        "Object not generated according to schema, fallback to manual parsing"
+      );
+
+      let textToParse = (error as any).text;
+
+      // Verificar se textToParse é uma string válida
+      if (!textToParse || typeof textToParse !== "string") {
+        console.error(
+          "Error text is not a valid string. Attempting recovery with empty object."
+        );
+
+        // Extrair schema do erro ou contexto
+        try {
+          // Criar um objeto básico vazio compatível com o que esperamos do agente
+          const emptyAgentResponse = {
+            action: "search",
+            think:
+              "Error recovery mode: performing search for additional information",
+            searchRequests: [
+              // Reutilizar a última pergunta como termo de busca
+              (error as any).originalQuery ||
+                "informações adicionais necessárias",
+            ],
+          };
+
+          console.log("Fallback to empty agent response:", emptyAgentResponse);
+
+          return {
+            object: emptyAgentResponse as unknown as T,
+            usage: (error as any).usage || {
+              prompt_tokens: 0,
+              completion_tokens: 0,
+              total_tokens: 0,
+            },
+          };
+        } catch (recoveryError) {
+          console.error("Recovery attempt failed:", recoveryError);
+          throw error;
+        }
+      }
+
+      // Limpar o texto antes de tentar fazer o parsing
+      // Remover backticks, marcadores de código e caracteres problemáticos
+      textToParse = textToParse
+        .replace(/```(json|javascript|js)?/g, "") // Remove marcadores de blocos de código
+        .replace(/```/g, "") // Remove marcadores de blocos de código restantes
+        .trim(); // Remove espaços em branco
+
       try {
         // First try standard JSON parsing
-        const partialResponse = JSON.parse((error as any).text);
-        console.log('JSON parse success!')
+        const partialResponse = JSON.parse(textToParse);
+        console.log("JSON parse success!");
         return {
           object: partialResponse as T,
-          usage: (error as any).usage
+          usage: (error as any).usage,
         };
       } catch (parseError) {
         // Use Hjson to parse the error response for more lenient parsing
         try {
-          const hjsonResponse = Hjson.parse((error as any).text);
-          console.log('Hjson parse success!')
+          // Tentar corrigir problemas comuns de JSON antes do Hjson parse
+          textToParse = textToParse
+            .replace(/,\s*}/g, "}") // Remove vírgulas no final de objetos
+            .replace(/,\s*\]/g, "]") // Remove vírgulas no final de arrays
+            .replace(/(['"])?([a-zA-Z0-9_]+)(['"])?:/g, '"$2":') // Converte chaves não-citadas para citadas
+            .replace(/:\s*'([^']*)'/g, ':"$1"'); // Converte aspas simples para duplas
+
+          const hjsonResponse = Hjson.parse(textToParse);
+          console.log("Hjson parse success!");
           return {
             object: hjsonResponse as T,
-            usage: (error as any).usage
+            usage: (error as any).usage,
           };
         } catch (hjsonError) {
-          console.error('Both JSON and Hjson parsing failed:', hjsonError);
-          throw error;
+          console.error("Both JSON and Hjson parsing failed:", hjsonError);
+          console.error("Failed parsing text:", textToParse);
+
+          // Última tentativa - usar regex para extrair propriedades de objetos
+          try {
+            console.log("Attempting emergency parsing via regex...");
+
+            // Detectar qual tipo de ação está no texto e construir um objeto mínimo viável
+            const actionMatch = textToParse.match(
+              /["']?action["']?\s*:\s*["']?(\w+)["']?/i
+            );
+            const thinkMatch = textToParse.match(
+              /["']?think["']?\s*:\s*["']?([^"']+)["']?/i
+            );
+
+            if (actionMatch && actionMatch[1]) {
+              const action = actionMatch[1].toLowerCase();
+              const think = thinkMatch
+                ? thinkMatch[1]
+                : "Emergency recovery mode";
+
+              // Construir objeto de resposta mínimo com base na ação detectada
+              const recoveryObject: any = { action, think };
+
+              // Adicionar propriedades baseadas na ação detectada
+              if (action === "search") {
+                recoveryObject.searchRequests = [
+                  (error as any).originalQuery || "informações adicionais",
+                ];
+              } else if (action === "answer") {
+                recoveryObject.answer =
+                  "Não foi possível gerar uma resposta estruturada.";
+                recoveryObject.references = [];
+              }
+
+              console.log("Emergency parsing succeeded with:", recoveryObject);
+
+              return {
+                object: recoveryObject as unknown as T,
+                usage: (error as any).usage || {
+                  prompt_tokens: 0,
+                  completion_tokens: 0,
+                  total_tokens: 0,
+                },
+              };
+            }
+
+            // Se não conseguiu extrair a ação, lançar o erro original
+            throw new Error("Emergency parsing failed to extract action");
+          } catch (emergencyParseError) {
+            console.error("Emergency parsing failed:", emergencyParseError);
+            throw error;
+          }
         }
       }
     }

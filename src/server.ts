@@ -1,6 +1,6 @@
 import app from "./app";
 
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 3001;
 
 // Export server startup function for better testing
 export function startServer() {
@@ -10,6 +10,6 @@ export function startServer() {
 }
 
 // Start server if running directly
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== "test") {
   startServer();
 }
