@@ -5,7 +5,7 @@ export NODE_ENV=development
 
 # Verificar portas em uso
 echo "Verificando portas disponíveis para node-jina..."
-PORTS=(3100 3001 3102 3103)
+PORTS=(3001)
 SELECTED_PORT=""
 
 for PORT in "${PORTS[@]}"; do
@@ -30,4 +30,4 @@ echo "NODE_ENV: $NODE_ENV"
 echo "-------------------------------------------"
 
 export PORT=$SELECTED_PORT
-npm run start
+pnpm run start
