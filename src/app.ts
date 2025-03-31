@@ -28,7 +28,7 @@ app.use(
     origin: [
       "http://localhost:5173", // Frontend
       "http://localhost:3001", // Node/Next
-      "http://localhost:3000", // Node alternativo
+      "http://localhost:3002", // Node alternativo
       "http://localhost:3003", // Admin Panel
       "http://localhost:8080", // UI-Jina
     ],
