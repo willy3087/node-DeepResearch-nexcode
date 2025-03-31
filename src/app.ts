@@ -23,7 +23,20 @@ const secret = process.argv
   .find((arg) => arg.startsWith("--secret="))
   ?.split("=")[1];
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173", // Frontend
+      "http://localhost:3001", // Node/Next
+      "http://localhost:3000", // Node alternativo
+      "http://localhost:3003", // Admin Panel
+      "http://localhost:8080", // UI-Jina
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+    credentials: true,
+  })
+);
 app.use(
   express.json({
     limit: "10mb",

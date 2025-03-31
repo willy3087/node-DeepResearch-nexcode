@@ -1,5 +1,5 @@
 // Action Types
-import {CoreMessage, LanguageModelUsage} from "ai";
+import { CoreMessage, LanguageModelUsage } from "ai";
 
 type BaseAction = {
   action: "search" | "answer" | "reflect" | "visit" | "coding";
@@ -7,12 +7,12 @@ type BaseAction = {
 };
 
 export type SERPQuery = {
-  q: string,
-  hl?: string,
-  gl?: string,
-  location?: string,
-  tbs?: string,
-}
+  q: string;
+  hl?: string;
+  gl?: string;
+  location?: string;
+  tbs?: string;
+};
 
 export type SearchAction = BaseAction & {
   action: "search";
@@ -20,11 +20,11 @@ export type SearchAction = BaseAction & {
 };
 
 export type Reference = {
-    exactQuote: string;
-    url: string;
-    title: string;
-    dateTime?: string;
-  }
+  exactQuote: string;
+  url: string;
+  title: string;
+  dateTime?: string;
+};
 
 export type AnswerAction = BaseAction & {
   action: "answer";
@@ -34,15 +34,14 @@ export type AnswerAction = BaseAction & {
   mdAnswer?: string;
 };
 
-
 export type KnowledgeItem = {
-  question: string,
-  answer: string,
+  question: string;
+  answer: string;
   references?: Array<Reference> | Array<any>;
-  type: 'qa' | 'side-info' | 'chat-history' | 'url' | 'coding',
-  updated?: string,
-  sourceCode?: string,
-}
+  type: "qa" | "side-info" | "chat-history" | "url" | "coding";
+  updated?: string;
+  sourceCode?: string;
+};
 
 export type ReflectAction = BaseAction & {
   action: "reflect";
@@ -59,14 +58,25 @@ export type CodingAction = BaseAction & {
   codingIssue: string;
 };
 
-export type StepAction = SearchAction | AnswerAction | ReflectAction | VisitAction | CodingAction;
+export type StepAction =
+  | SearchAction
+  | AnswerAction
+  | ReflectAction
+  | VisitAction
+  | CodingAction;
 
-export type EvaluationType = 'definitive' | 'freshness' | 'plurality' | 'attribution' | 'completeness' | 'strict';
+export type EvaluationType =
+  | "definitive"
+  | "freshness"
+  | "plurality"
+  | "attribution"
+  | "completeness"
+  | "strict";
 
 export type RepeatEvaluationType = {
-    type: EvaluationType;
-    numEvalsRequired: number;
-}
+  type: EvaluationType;
+  numEvalsRequired: number;
+};
 
 // Following Vercel AI SDK's token counting interface
 export interface TokenUsage {
@@ -82,7 +92,7 @@ export interface SearchResponse {
     description: string;
     url: string;
     content: string;
-    usage: { tokens: number; };
+    usage: { tokens: number };
   }> | null;
   name?: string;
   message?: string;
@@ -108,15 +118,15 @@ export interface SerperSearchResponse {
     description: string;
     descriptionSource: string;
     descriptionLink: string;
-    attributes: { [k: string]: string; };
-  },
+    attributes: { [k: string]: string };
+  };
   organic: {
     title: string;
     link: string;
     snippet: string;
     date: string;
-    siteLinks?: { title: string; link: string; }[];
-    position: number,
+    siteLinks?: { title: string; link: string }[];
+    position: number;
   }[];
   topStories?: {
     title: string;
@@ -129,7 +139,6 @@ export interface SerperSearchResponse {
   credits: number;
 }
 
-
 export interface ReadResponse {
   code: number;
   status: number;
@@ -138,14 +147,13 @@ export interface ReadResponse {
     description: string;
     url: string;
     content: string;
-    usage: { tokens: number; };
+    usage: { tokens: number };
     links: Array<[string, string]>; // [anchor, url]
   };
   name?: string;
   message?: string;
   readableMessage?: string;
 }
-
 
 export type EvaluationResponse = {
   pass: boolean;
@@ -161,16 +169,16 @@ export type EvaluationResponse = {
   };
   exactQuote?: string;
   completeness_analysis?: {
-    aspects_expected: string,
-    aspects_provided: string,
-  },
+    aspects_expected: string;
+    aspects_provided: string;
+  };
   improvement_plan?: string;
 };
 
 export type CodeGenResponse = {
   think: string;
   code: string;
-}
+};
 
 export type ErrorAnalysisResponse = {
   recap: string;
@@ -178,18 +186,17 @@ export type ErrorAnalysisResponse = {
   improvement: string;
 };
 
-
 export type UnNormalizedSearchSnippet = {
   title: string;
   url?: string;
   description?: string;
   link?: string;
   snippet?: string;
-  weight?: number,
-  date?: string
+  weight?: number;
+  date?: string;
 };
 
-export type SearchSnippet = UnNormalizedSearchSnippet& {
+export type SearchSnippet = UnNormalizedSearchSnippet & {
   url: string;
   description: string;
 };
@@ -200,28 +207,28 @@ export type BoostedSearchSnippet = SearchSnippet & {
   pathBoost: number;
   jinaRerankBoost: number;
   finalScore: number;
-}
+};
 
 // OpenAI API Types
 export interface Model {
   id: string;
-  object: 'model';
+  object: "model";
   created: number;
   owned_by: string;
 }
 
-export type PromptPair = { system: string, user: string };
+export type PromptPair = { system: string; user: string };
 
 export type ResponseFormat = {
-  type: 'json_schema' | 'json_object';
+  type: "json_schema" | "json_object";
   json_schema?: any;
-}
+};
 
 export interface ChatCompletionRequest {
   model: string;
   messages: Array<CoreMessage>;
   stream?: boolean;
-  reasoning_effort?: 'low' | 'medium' | 'high';
+  reasoning_effort?: "low" | "medium" | "high";
   max_completion_tokens?: number;
 
   budget_tokens?: number;
@@ -237,26 +244,26 @@ export interface ChatCompletionRequest {
 }
 
 export interface URLAnnotation {
-  type: 'url_citation',
-  url_citation: Reference
+  type: "url_citation";
+  url_citation: Reference;
 }
 
 export interface ChatCompletionResponse {
   id: string;
-  object: 'chat.completion';
+  object: "chat.completion";
   created: number;
   model: string;
   system_fingerprint: string;
   choices: Array<{
     index: number;
     message: {
-      role: 'assistant';
+      role: "assistant";
       content: string;
-      type: 'text' | 'think' | 'json' | 'error';
+      type: "text" | "think" | "json" | "error";
       annotations?: Array<URLAnnotation>;
     };
     logprobs: null;
-    finish_reason: 'stop' | 'error';
+    finish_reason: "stop" | "error";
   }>;
   usage: {
     prompt_tokens: number;
@@ -270,21 +277,21 @@ export interface ChatCompletionResponse {
 
 export interface ChatCompletionChunk {
   id: string;
-  object: 'chat.completion.chunk';
+  object: "chat.completion.chunk";
   created: number;
   model: string;
   system_fingerprint: string;
   choices: Array<{
     index: number;
     delta: {
-      role?: 'assistant';
+      role?: "assistant";
       content?: string;
-      type?: 'text' | 'think' | 'json' | 'error';
+      type?: "text" | "think" | "json" | "error";
       url?: string;
       annotations?: Array<URLAnnotation>;
     };
     logprobs: null;
-    finish_reason: null | 'stop' | 'thinking_end' | 'error';
+    finish_reason: null | "stop" | "thinking_end" | "error";
   }>;
   usage?: any;
   visitedURLs?: string[];
@@ -293,11 +300,10 @@ export interface ChatCompletionChunk {
 }
 
 // Tracker Types
-import {TokenTracker} from './utils/token-tracker';
-import {ActionTracker} from './utils/action-tracker';
+import { TokenTracker } from "./utils/token-tracker";
+import { ActionTracker } from "./utils/action-tracker";
 
 export interface TrackerContext {
   tokenTracker: TokenTracker;
   actionTracker: ActionTracker;
 }
-
