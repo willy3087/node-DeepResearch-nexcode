@@ -23,6 +23,9 @@ importers:
       dayjs:
         specifier: ^1.11.13
         version: 1.11.13
+      hjson:
+        specifier: ^3.2.2
+        version: 3.2.2
       lodash:
         specifier: ^4.17.21
         version: 4.17.21
@@ -1403,6 +1406,10 @@ packages:
   helper-cache@0.7.2:
     resolution: {integrity: sha512-ictXA4Nsj9HZcY5Sf4PyWKOXRkQLCDLJLvekaKKrQ+IGLMe4Z+u2oM1QqRGjtWeQRfQCA3NJyIzZpfmw6GvwOQ==}
     engines: {node: '>=0.10.0'}
+
+  hjson@3.2.2:
+    resolution: {integrity: sha512-MkUeB0cTIlppeSsndgESkfFD21T2nXPRaBStLtf3cAYA2bVEFdXlodZB0TukwZiobPD1Ksax5DK4RTZeaXCI3Q==}
+    hasBin: true
 
   homedir-polyfill@1.0.3:
     resolution: {integrity: sha512-eSmmWE5bZTK2Nou4g0AI3zZ9rswp7GRKoKXS1BLUkvPviOqs4YTN1djQIqrXy9k5gEtdLPy86JjRwsNM9tnDcA==}
@@ -5112,6 +5119,8 @@ snapshots:
       extend-shallow: 2.0.1
       lazy-cache: 0.2.7
       lodash.bind: 3.1.0
+
+  hjson@3.2.2: {}
 
   homedir-polyfill@1.0.3:
     dependencies:

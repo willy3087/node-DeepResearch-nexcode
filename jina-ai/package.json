@@ -29,6 +29,7 @@
     "@google-cloud/storage": "^7.15.1",
     "civkit": "^0.8.3-15926cb",
     "dayjs": "^1.11.13",
+    "hjson": "^3.2.2",
     "lodash": "^4.17.21",
     "reflect-metadata": "^0.2.2",
     "tsyringe": "^4.8.0",

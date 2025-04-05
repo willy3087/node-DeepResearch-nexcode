@@ -91,7 +91,7 @@ export function getMaxTokens(toolName: ToolName): number {
   return getToolConfig(toolName).maxTokens;
 }
 
-// Get model instance
+// Obtém a instância do modelo
 export function getModel(toolName: ToolName) {
   const config = getToolConfig(toolName);
   const providerConfig = (
