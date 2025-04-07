@@ -30,6 +30,7 @@ app.use(
       "http://localhost:3001", // Node/Next
       "http://localhost:3002", // Node alternativo
       "http://localhost:3003", // Admin Panel
+      "http://localhost:3004", // Navegação ao vivo
       "http://localhost:8080", // UI-Jina
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
