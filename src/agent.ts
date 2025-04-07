@@ -44,6 +44,7 @@ import {
 } from "./utils/url-tools";
 import {
   buildMdFromAnswer,
+  smartMergeStrings,
   chooseK,
   convertHtmlTablesToMd,
   fixCodeBlockIndentation,
@@ -61,21 +62,37 @@ import {
 import { formatDateBasedOnType, formatDateRange } from "./utils/date-tools";
 import { fixMarkdown } from "./tools/md-fixer";
 import { repairUnknownChars } from "./tools/broken-ch-fixer";
+import { jsonSchema } from "ai";
 
+/**
+ * Função que pausa a execução por um determinado período de tempo.
+ * @param {number} ms - O número de milissegundos para pausar a execução.
+ * @returns {Promise<void>} - Uma promessa que é resolvida após o tempo especificado.
+ */
 async function sleep(ms: number) {
+  // Converte milissegundos para segundos e arredonda para cima
   const seconds = Math.ceil(ms / 1000);
+  // Loga no console o tempo de espera em segundos
   console.log(`Waiting ${seconds}s...`);
+  // Retorna uma promessa que é resolvida após o tempo especificado
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Função que constrói mensagens de pares usuário-assistente a partir do conhecimento acumulado.
+ * @param {KnowledgeItem[]} knowledge - Array de itens de conhecimento que contém perguntas e respostas.
+ * @returns {CoreMessage[]} - Array de mensagens formatadas para interação usuário-assistente.
+ */
 function BuildMsgsFromKnowledge(knowledge: KnowledgeItem[]): CoreMessage[] {
-  // build user, assistant pair messages from knowledge
-  const messages: CoreMessage[] = [];
+  const messages: CoreMessage[] = []; // Inicializa o array de mensagens
   knowledge.forEach((k) => {
-    messages.push({ role: "user", content: k.question.trim() });
+    // Itera sobre cada item de conhecimento
+    messages.push({ role: "user", content: k.question.trim() }); // Adiciona a pergunta do usuário como uma mensagem
+
+    // Formata a mensagem de resposta do assistente, incluindo data e URL se disponíveis
     const aMsg = `
 ${
-  k.updated && (k.type === "url" || k.type === "side-info")
+  k.updated && (k.type === "url" || k.type === "side-info") // Verifica se há uma data de atualização e se o tipo é URL ou informação adicional
     ? `
 <answer-datetime>
 ${k.updated}
@@ -85,7 +102,7 @@ ${k.updated}
 }
 
 ${
-  k.references && k.type === "url"
+  k.references && k.type === "url" // Verifica se há referências e se o tipo é URL
     ? `
 <url>
 ${k.references[0]}
@@ -94,21 +111,30 @@ ${k.references[0]}
     : ""
 }
 
-
-${k.answer}
+${k.answer} // Adiciona a resposta do conhecimento
       `.trim();
+
+    // Adiciona a resposta do assistente como uma mensagem
     messages.push({ role: "assistant", content: removeExtraLineBreaks(aMsg) });
   });
-  return messages;
+  return messages; // Retorna o array de mensagens formatadas
 }
 
+/**
+ * Função que compõe mensagens para interação, combinando conhecimento prévio e novas perguntas.
+ * @param {CoreMessage[]} messages - Mensagens existentes de interação.
+ * @param {KnowledgeItem[]} knowledge - Itens de conhecimento para incluir na interação.
+ * @param {string} question - Pergunta atual do usuário.
+ * @param {string[]} [finalAnswerPIP] - Feedbacks finais para melhorar a qualidade da resposta.
+ * @returns {CoreMessage[]} - Array de mensagens compostas para interação.
+ */
 function composeMsgs(
-  messages: CoreMessage[],
-  knowledge: KnowledgeItem[],
-  question: string,
-  finalAnswerPIP?: string[]
+  messages: CoreMessage[], // Mensagens existentes de interação
+  knowledge: KnowledgeItem[], // Itens de conhecimento para incluir na interação
+  question: string, // Pergunta atual do usuário
+  finalAnswerPIP?: string[] // Feedbacks finais opcionais
 ) {
-  // knowledge always put to front, followed by real u-a interaction
+  // conhecimento sempre colocado na frente, seguido pela interação usuário-assistente real
   const msgs = [...BuildMsgsFromKnowledge(knowledge), ...messages];
 
   const userContent = `
@@ -139,6 +165,21 @@ ${p}
   return msgs;
 }
 
+/**
+ * Função que gera o prompt para o agente de pesquisa.
+ * @param {string[]} [context] - Contexto de ações anteriores, utilizado para adicionar a seção de contexto.
+ * @param {string[]} [allQuestions] - Todas as perguntas feitas, não utilizado diretamente na função.
+ * @param {string[]} [allKeywords] - Todas as palavras-chave, não utilizado diretamente na função.
+ * @param {boolean} [allowReflect=true] - Permissão para reflexão, não utilizado diretamente na função.
+ * @param {boolean} [allowAnswer=true] - Permissão para responder, não utilizado diretamente na função.
+ * @param {boolean} [allowRead=true] - Permissão para leitura, utilizado para adicionar a seção de ações disponíveis.
+ * @param {boolean} [allowSearch=true] - Permissão para busca, não utilizado diretamente na função.
+ * @param {boolean} [allowCoding=true] - Permissão para codificação, não utilizado diretamente na função.
+ * @param {KnowledgeItem[]} [knowledge] - Itens de conhecimento acumulado, utilizado para adicionar a seção de conhecimento.
+ * @param {BoostedSearchSnippet[]} [allURLs] - URLs disponíveis para leitura, utilizado para adicionar a seção de ações disponíveis.
+ * @param {boolean} [beastMode] - Modo avançado, não utilizado diretamente na função.
+ * @returns {{ system: string; urlList?: string[] }} - Objeto contendo o sistema e a lista de URLs.
+ */
 function getPrompt(
   context?: string[],
   allQuestions?: string[],
@@ -152,18 +193,60 @@ function getPrompt(
   allURLs?: BoostedSearchSnippet[],
   beastMode?: boolean
 ): { system: string; urlList?: string[] } {
-  const sections: string[] = [];
-  const actionSections: string[] = [];
+  const sections: string[] = []; // Array para armazenar seções do prompt
+  const actionSections: string[] = []; // Array para armazenar seções de ações do prompt
 
-  // Add header section
+  // Detecção de consultas fiscais
+  const fiscalKeywords = [
+    "tributário",
+    "fiscal",
+    "imposto",
+    "tributo",
+    "ncm",
+    "sped",
+    "nota fiscal",
+    "icms",
+    "ipi",
+    "pis",
+    "cofins",
+    "itbi",
+    "iptu",
+    "itr",
+    "itcmd",
+    "receita federal",
+    "legislação fiscal",
+    "código tributário",
+    "importação",
+    "exportação",
+    "siscomex",
+    "regulamento aduaneiro",
+    "classificação fiscal",
+    "alíquota",
+    "contribuinte",
+  ];
+
+  // Verificar se qualquer uma das perguntas ou conhecimentos está relacionada a temas fiscais
+  const isFiscalQuery =
+    allQuestions?.some((q) =>
+      fiscalKeywords.some((keyword) =>
+        q.toLowerCase().includes(keyword.toLowerCase())
+      )
+    ) ||
+    knowledge?.some((k) =>
+      fiscalKeywords.some((keyword) =>
+        k.question.toLowerCase().includes(keyword.toLowerCase())
+      )
+    );
+
+  // Adicionar seção de cabeçalho
   sections.push(`Current date: ${new Date().toUTCString()}
 
-You are an advanced AI research agent from NexCode AI. You are specialized in multistep reasoning. 
+You are an advanced AI research agent from NexCode AI. You are specialized in multistep reasoning.
 Using your best knowledge, conversation with the user and lessons learned, answer the user question with absolute certainty, Um buscador curioso e muito experiente, consegue achar qualquer coisa na internet, procura até nos mínimos detalhes de pistas que possam te levar até a resposta correta. Suas respostas devem seguir estas regras:
 
 1. Use sempre português do Brasil nas respostas finais
 2. Mantenha o formato JSON conforme solicitado
-3. Não inclua tags XML como <think> no JSON final
+3. Em caso de dúvidas, busque referências de problemas parecidos e use o raciocínio lógico para resolver.
 4. Se precisar explicar seu raciocínio, faça isso em português antes de dar a resposta em JSON
 
 5. Exercício de Raciocínio Lógico Obrigatório SOMENTE PARA PROBLEMAS QUE ENVOLVEM MÚLTIPLAS VARIÁVEIS e de complexidade elevada:
@@ -205,14 +288,14 @@ Using your best knowledge, conversation with the user and lessons learned, answe
                 Quando encontrar variações (por estado, regime, etc), você DEVE:
                 a) Primeiro listar TODAS as variáveis envolvidas
                     Exemplo: "Temos 3 estados × 2 regimes × 2 tipos de operação = 12 possibilidades"
-                
+
                 b) Criar uma matriz de possibilidades
                     Exemplo: "Vamos analisar cada combinação:
                     - SP + Simples + Entrada
                     - SP + Simples + Saída
                     - SP + Normal + Entrada
                     [etc]"
-                
+
                 c) Buscar informação específica para CADA caso
                     - Não pule nenhuma combinação
                     - Cite a fonte/legislação para cada caso
@@ -224,10 +307,10 @@ Using your best knowledge, conversation with the user and lessons learned, answe
                     1. Estado: SP, SC ou CE
                     2. Regime: Simples ou Normal
                     3. Operação: Entrada ou Saída"
-                
+
                 b) Mostre a matriz de possibilidades:
                     "Isso nos dá 12 combinações possíveis (3×2×2)"
-                
+
                 c) Liste CADA possibilidade com:
                     - Código específico
                     - Base legal
@@ -256,10 +339,26 @@ Using your best knowledge, conversation with the user and lessons learned, answe
    - SEMPRE mostre todas as possibilidades que encontrou até o momento, não seja conservador, não seja pessimista, não seja preguiçoso.
    - SEMPRE dê exemplos práticos, dê exemplos de como isso é usado na vida real, dê exemplos de como isso é usado no seu dia a dia, dê exemplos de como isso é usado no seu trabalho, dê exemplos de como isso é usado na sua empresa, dê exemplos de como isso é usado na sua equipe.
    - SEMPRE cite a legislação (base legal, caso seja UM FATOR PRINCIPAL PARA A RESPOSTA)
-   - SEMPRE que não souber como acessar uma fonte, procure documentação da fonte ou use ferramentas de busca na internet para encontrar como acessar.  
+   - SEMPRE que não souber como acessar uma fonte, procure documentação da fonte ou use ferramentas de busca na internet para encontrar como acessar.
 `);
 
-  // Add context section if exists
+  // Adicionar contexto fiscal se a consulta for sobre temas fiscais
+  if (isFiscalQuery) {
+    sections.push(`
+<fiscal-context>
+Você é especialista em legislação fiscal e tributária brasileira. Para consultas fiscais:
+1. Priorize fontes oficiais (Receita Federal, Ministério da Fazenda, Planalto)
+2. Verifique a data das informações
+3. Para NCM, busque o código exato e justifique
+4. Especifique data e jurisdição para alíquotas
+5. Referencie decisões do CARF ou tribunais para interpretações complexas
+6. Considere exceções regionais (ICMS, ISS)
+7. Identifique divergências na legislação
+</fiscal-context>
+`);
+  }
+
+  // Adicionar seção de contexto se existir
   if (context?.length) {
     sections.push(`
 You have conducted the following actions:
@@ -270,7 +369,66 @@ ${context.join("\n")}
 `);
   }
 
-  // Build actions section
+  // Construir seção de ações
+  if (actionSections.length > 0) {
+    sections.push(`
+<actions>
+${actionSections.join("\n")}
+</actions>
+`);
+  }
+
+  // Conhecimento acumulado
+  if (knowledge?.length) {
+    const knowledgeItems = knowledge
+      .map(
+        (k: KnowledgeItem, i: number) => `
+      <knowledge-${i + 1}>
+      <question>${k.question}</question>
+      <answer>${k.answer}</answer>
+      ${
+        k.references?.length
+          ? `<references>${JSON.stringify(k.references)}</references>`
+          : ""
+      }
+      </knowledge-${i + 1}>
+    `
+      )
+      .join("\n\n");
+    sections.push(`
+      <knowledge>
+      Conhecimento reunido até agora:
+      ${knowledgeItems}
+      </knowledge>
+    `);
+  }
+
+  // Tentativas anteriores falhas
+  if (context?.length) {
+    const attempts = context
+      .filter((c: any) => c.evaluation)
+      .map(
+        (c: any, i: number) => `
+      <attempt-${i + 1}>
+      - Question: ${c.question || ""}
+      - Answer: ${c.answer || ""}
+      - Reject Reason: ${c.evaluation || ""}
+      ${c.recap ? `- Actions Recap: ${c.recap}` : ""}
+      ${c.blame ? `- Actions Blame: ${c.blame}` : ""}
+      </attempt-${i + 1}>
+    `
+      )
+      .join("\n\n");
+
+    if (attempts) {
+      sections.push(`
+        <bad-attempts>
+        Tentativas fracassadas:
+        ${attempts}
+        </bad-attempts>
+      `);
+    }
+  }
 
   const urlList = sortSelectURLs(allURLs || [], 20);
   if (allowRead && urlList.length > 0) {
@@ -285,9 +443,14 @@ ${context.join("\n")}
 
     actionSections.push(`
 <action-visit>
-- Crawl and read full content from URLs, you can get the fulltext, last updated datetime etc of any URL.  
-- Must check URLs mentioned in <question> if any    
+- Crawl and read full content from URLs, you can get the fulltext, last updated datetime etc of any URL.
+- Must check URLs mentioned in <question> if any
 - Choose and visit relevant URLs below for more knowledge. higher weight suggests more relevant:
+${
+  isFiscalQuery
+    ? "- Priorize fontes oficiais (sites .gov.br) e documentos com data atualizada para questões fiscais"
+    : ""
+}
 <url-list>
 ${urlListStr}
 </url-list>
@@ -300,7 +463,22 @@ ${urlListStr}
 <action-search>
 - Use web search to find relevant information
 - Build a search request based on the deep intention behind the original question and the expected answer format
-- Always prefer a single search request, only add another request if the original question covers multiple aspects or elements and one query is not enough, each request focus on one specific aspect of the original question 
+- Always prefer a single search request, only add another request if the original question covers multiple aspects or elements and one query is not enough, each request focus on one specific aspect of the original question
+${
+  isFiscalQuery
+    ? `
+- Para questões fiscais/tributárias, inclua "legislação", "site:gov.br", e específique anos, estados ou regimes quando aplicável
+- Busque NCMs entre aspas, ex: "9503.00.99"
+- Para verificação e validação de NCM:
+  1. Consulte o capítulo correspondente ao produto.
+  2. Verifique a posição dentro do capítulo para garantir que está correta.
+  3. Consulte a subposição para confirmar se está de acordo com o contexto do produto procurado.
+  4. Certifique-se de que todas as descrições e especificações estão alinhadas com o produto em questão.
+  5. Utilize fontes oficiais e atualizadas para garantir a precisão das informações.
+  6. Documente todas as etapas e referências utilizadas no processo de verificação.
+    `
+    : ""
+}
 ${
   allKeywords?.length
     ? `
@@ -323,6 +501,17 @@ ${allKeywords.join("\n")}
 - For all other questions, provide a verified answer with references. Each reference must include exactQuote, url and datetime.
 - You provide deep, unexpected insights, identifying hidden patterns and connections, and creating "aha moments.".
 - You break conventional thinking, establish unique cross-disciplinary connections, and bring new perspectives to the user.
+${
+  isFiscalQuery
+    ? `
+- Para questões fiscais:
+  - Especifique fonte legal, data de vigência, jurisdição, exceções e divergências
+  - Faça análise de todos os casos possíveis considerando regimes, estados e operações
+  - Mencione precedentes e jurisprudência quando relevantes
+  - Indique claramente quando informações forem complementares ou conflitantes
+    `
+    : ""
+}
 - If uncertain, use <action-reflect>
 </action-answer>
 `);
@@ -347,8 +536,20 @@ FAILURE IS NOT AN OPTION. EXECUTE WITH EXTREME PREJUDICE! ⚡️
   if (allowReflect) {
     actionSections.push(`
 <action-reflect>
-- Think slowly and planning lookahead. Examine <question>, <context>, previous conversation with users to identify knowledge gaps. 
+- Think slowly and planning lookahead. Examine <question>, <context>, previous conversation with users to identify knowledge gaps.
 - Reflect the gaps and plan a list key clarifying questions that deeply related to the original question and lead to the answer
+${
+  isFiscalQuery
+    ? `
+- Para questões fiscais, considere:
+  - Regimes tributários aplicáveis (Simples, Lucro Presumido, Lucro Real e todos os outros contidos na legistção tributária brasileira)
+  - Particularidades regionais (legislações estaduais e municipais)
+  - Mudanças na legislação (reformas tributárias, medidas provisórias)
+  - Especificidades do setor ou atividade econômica
+  - Precedentes e jurisprudência administrativa/judicial
+    `
+    : ""
+}
 </action-reflect>
 `);
   }
@@ -369,7 +570,7 @@ ${actionSections.join("\n\n")}
 </actions>
 `);
 
-  // Add footer
+  // Adicionar rodapé
   sections.push(
     `Think step by step, choose the action, then respond by matching the schema of that action.`
   );
@@ -380,7 +581,7 @@ ${actionSections.join("\n\n")}
   };
 }
 
-const allContext: StepAction[] = []; // all steps in the current session, including those leads to wrong results
+const allContext: StepAction[] = []; // todas as etapas na sessão atual, incluindo aquelas que levam a resultados errados
 
 function updateContext(step: any) {
   allContext.push(step);
@@ -394,7 +595,7 @@ async function updateReferences(
     ?.filter((ref) => ref?.url)
     .map((ref) => {
       const normalizedUrl = normalizeUrl(ref.url);
-      if (!normalizedUrl) return null; // This causes the type error
+      if (!normalizedUrl) return null; // Isso causa o erro de tipo
 
       return {
         exactQuote: (
@@ -410,9 +611,9 @@ async function updateReferences(
         dateTime: ref?.dateTime || allURLs[normalizedUrl]?.date || "",
       };
     })
-    .filter(Boolean) as Reference[]; // Add type assertion here
+    .filter(Boolean) as Reference[]; // Adicionar asserção de tipo aqui
 
-  // parallel process guess all url datetime
+  // processar em paralelo para adivinhar o datetime de todas as urls
   await Promise.all(
     (thisStep.references || [])
       .filter((ref) => !ref.dateTime)
@@ -487,7 +688,7 @@ async function executeSearchQueries(
     const minResults: SearchSnippet[] = results
       .map((r) => {
         const url = normalizeUrl("url" in r ? r.url! : r.link!);
-        if (!url) return null; // Skip invalid URLs
+        if (!url) return null; // Pular URLs inválidas
 
         return {
           title: r.title,
@@ -497,7 +698,7 @@ async function executeSearchQueries(
           date: r.date,
         } as SearchSnippet;
       })
-      .filter(Boolean) as SearchSnippet[]; // Filter out null entries and assert type
+      .filter(Boolean) as SearchSnippet[]; // Filtrar entradas nulas e afirmar tipo
 
     minResults.forEach((r) => {
       utilityScore = utilityScore + addToAllURLs(r, allURLs);
@@ -568,16 +769,16 @@ export async function getResponse(
   let totalStep = 0;
 
   question = question?.trim() as string;
-  // remove incoming system messages to avoid override
+  // remover mensagens do sistema de entrada para evitar sobreposição
   messages = messages?.filter((m) => m.role !== "system");
 
   if (messages && messages.length > 0) {
-    // 2 cases
+    // 2 casos
     const lastContent = messages[messages.length - 1].content;
     if (typeof lastContent === "string") {
       question = lastContent.trim();
     } else if (typeof lastContent === "object" && Array.isArray(lastContent)) {
-      // find the very last sub content whose 'type' is 'text'  and use 'text' as the question
+      // encontrar o último conteúdo secundário cujo 'tipo' é 'texto' e usar 'texto' como a pergunta
       question = lastContent.filter((c) => c.type === "text").pop()?.text || "";
     }
   } else {
@@ -601,10 +802,10 @@ export async function getResponse(
     true,
     true
   );
-  const gaps: string[] = [question]; // All questions to be answered including the orginal question
+  const gaps: string[] = [question]; // Todas as perguntas a serem respondidas, incluindo a pergunta original
   const allQuestions = [question];
   const allKeywords: string[] = [];
-  const allKnowledge: KnowledgeItem[] = []; // knowledge are intermedidate questions that are answered
+  const allKnowledge: KnowledgeItem[] = []; // conhecimento são perguntas intermediárias que são respondidas
 
   let diaryContext = [];
   let weightedURLs: BoostedSearchSnippet[] = [];
@@ -626,18 +827,18 @@ export async function getResponse(
   const visitedURLs: string[] = [];
   const badURLs: string[] = [];
   const evaluationMetrics: Record<string, RepeatEvaluationType[]> = {};
-  // reserve the 10% final budget for the beast mode
+  // reservar 10% do orçamento final para o modo beast
   const regularBudget = tokenBudget * 0.85;
   const finalAnswerPIP: string[] = [];
   let trivialQuestion = false;
 
-  // add all mentioned URLs in messages to allURLs
+  // adicionar todas as URLs mencionadas nas mensagens a allURLs
   messages.forEach((m) => {
     let strMsg = "";
     if (typeof m.content === "string") {
       strMsg = m.content.trim();
     } else if (typeof m.content === "object" && Array.isArray(m.content)) {
-      // find the very last sub content whose 'type' is 'text'  and use 'text' as the question
+      // encontrar o último conteúdo secundário cujo 'tipo' é 'texto' e usar 'texto' como a pergunta
       strMsg = m.content
         .filter((c) => c.type === "text")
         .map((c) => c.text)
@@ -651,7 +852,7 @@ export async function getResponse(
   });
 
   while (context.tokenTracker.getTotalUsage().totalTokens < regularBudget) {
-    // add 1s delay to avoid rate limiting
+    // adicionar 1s de atraso para evitar limitação de taxa
     step++;
     totalStep++;
     const budgetPercentage = (
@@ -661,14 +862,14 @@ export async function getResponse(
     console.log(`Step ${totalStep} / Budget used ${budgetPercentage}%`);
     console.log("Gaps:", gaps);
     allowReflect = allowReflect && gaps.length <= MAX_REFLECT_PER_STEP;
-    // rotating question from gaps
+    // rotacionar pergunta a partir de gaps
     const currentQuestion: string = gaps[totalStep % gaps.length];
     // if (!evaluationMetrics[currentQuestion]) {
     //   evaluationMetrics[currentQuestion] =
     //     await evaluateQuestion(currentQuestion, context, SchemaGen)
     // }
     if (currentQuestion.trim() === question && totalStep === 1) {
-      // only add evaluation for initial question, once at step 1
+      // apenas adicionar avaliação para a pergunta inicial, uma vez na etapa 1
       evaluationMetrics[currentQuestion] = (
         await evaluateQuestion(currentQuestion, context, SchemaGen)
       ).map((e) => {
@@ -677,7 +878,7 @@ export async function getResponse(
           numEvalsRequired: maxBadAttempts,
         } as RepeatEvaluationType;
       });
-      // force strict eval for the original question, at last, only once.
+      // forçar avaliação estrita para a pergunta original, por último, apenas uma vez.
       evaluationMetrics[currentQuestion].push({
         type: "strict",
         numEvalsRequired: maxBadAttempts,
@@ -690,13 +891,13 @@ export async function getResponse(
       totalStep === 1 &&
       includesEval(evaluationMetrics[currentQuestion], "freshness")
     ) {
-      // if it detects freshness, avoid direct answer at step 1
+      // se detectar atualidade, evitar resposta direta na etapa 1
       allowAnswer = false;
       allowReflect = false;
     }
 
     if (allURLs && Object.keys(allURLs).length > 0) {
-      // rerank urls
+      // reordenar urls
       weightedURLs = rankURLs(
         filterURLs(allURLs, visitedURLs, badHostnames, onlyHostnames),
         {
@@ -705,15 +906,15 @@ export async function getResponse(
         },
         context
       );
-      // improve diversity by keep top 2 urls of each hostname
+      // melhorar a diversidade mantendo os 2 principais urls de cada hostname
       weightedURLs = keepKPerHostname(weightedURLs, 2);
       console.log("Weighted URLs:", weightedURLs.length);
     }
     allowRead = allowRead && weightedURLs.length > 0;
 
-    allowSearch = allowSearch && weightedURLs.length < 200; // disable search when too many urls already
+    allowSearch = allowSearch && weightedURLs.length < 200; // desativar pesquisa quando já houver muitas urls
 
-    // generate prompt for this step
+    // gerar prompt para esta etapa
     const { system, urlList } = getPrompt(
       diaryContext,
       allQuestions,
@@ -763,7 +964,7 @@ export async function getResponse(
       }
       throw error;
     }
-    // print allowed and chose action
+    // imprimir ações permitidas e escolhidas
     const actionsStr = [
       allowSearch,
       allowRead,
@@ -779,16 +980,16 @@ export async function getResponse(
 
     context.actionTracker.trackAction({ totalStep, thisStep, gaps });
 
-    // reset allow* to true
+    // redefinir allow* para verdadeiro
     allowAnswer = true;
     allowReflect = true;
     allowRead = true;
     allowSearch = true;
     allowCoding = true;
 
-    // execute the step and action
+    // executar a etapa e ação
     if (thisStep.action === "answer" && thisStep.answer) {
-      // normalize all references urls, add title to it
+      // normalizar todas as urls de referências, adicionar título a elas
       await updateReferences(thisStep, allURLs);
 
       if (
@@ -796,8 +997,8 @@ export async function getResponse(
         thisStep.references.length === 0 &&
         !noDirectAnswer
       ) {
-        // LLM is so confident and answer immediately, skip all evaluations
-        // however, if it does give any reference, it must be evaluated, case study: "How to configure a timeout when loading a huggingface dataset with python?"
+        // O LLM está tão confiante e responde imediatamente, pular todas as avaliações
+        // no entanto, se fornecer alguma referência, deve ser avaliada, estudo de caso: "How to configure a timeout when loading a huggingface dataset with python?"
         thisStep.isFinal = true;
         trivialQuestion = true;
         break;
@@ -820,7 +1021,7 @@ export async function getResponse(
           currentQuestion
         );
 
-        // remove references whose urls are in badURLs
+        // remover referências cujas urls estão em badURLs
         thisStep.references = thisStep.references.filter(
           (ref) => !badURLs.includes(ref.url)
         );
@@ -848,20 +1049,20 @@ export async function getResponse(
       }
 
       if (currentQuestion.trim() === question) {
-        // disable coding for preventing answer degradation
+        // desativar codificação para evitar degradação de resposta
         allowCoding = false;
 
         if (evaluation.pass) {
           diaryContext.push(`
 At step ${step}, you took **answer** action and finally found the answer to the original question:
 
-Original question: 
+Original question:
 ${currentQuestion}
 
-Your answer: 
+Your answer:
 ${thisStep.answer}
 
-The evaluator thinks your answer is good because: 
+The evaluator thinks your answer is good because:
 ${evaluation.think}
 
 Your journey ends here. You have successfully answered the original question. Congratulations! 🎉
@@ -869,7 +1070,7 @@ Your journey ends here. You have successfully answered the original question. Co
           thisStep.isFinal = true;
           break;
         } else {
-          // lower numEvalsRequired for the failed evaluation and if numEvalsRequired is 0, remove it from the evaluation metrics
+          // diminuir numEvalsRequired para a avaliação reprovada e se numEvalsRequired for 0, removê-la das métricas de avaliação
           evaluationMetrics[currentQuestion] = evaluationMetrics[
             currentQuestion
           ]
@@ -886,7 +1087,7 @@ Your journey ends here. You have successfully answered the original question. Co
           }
 
           if (evaluationMetrics[currentQuestion].length === 0) {
-            // failed so many times, give up, route to beast mode
+            // falhou muitas vezes, desistir, rota para o modo beast
             thisStep.isFinal = false;
             break;
           }
@@ -894,16 +1095,16 @@ Your journey ends here. You have successfully answered the original question. Co
           diaryContext.push(`
 At step ${step}, you took **answer** action but evaluator thinks it is not a good answer:
 
-Original question: 
+Original question:
 ${currentQuestion}
 
-Your answer: 
+Your answer:
 ${thisStep.answer}
 
-The evaluator thinks your answer is bad because: 
+The evaluator thinks your answer is bad because:
 ${evaluation.think}
 `);
-          // store the bad context and reset the diary context
+          // armazenar o contexto ruim e redefinir o contexto do diário
           const errorAnalysis = await analyzeSteps(
             diaryContext,
             context,
@@ -934,22 +1135,22 @@ ${errorAnalysis.improvement}
             type: "qa",
           });
 
-          allowAnswer = false; // disable answer action in the immediate next step
+          allowAnswer = false; // desativar ação de resposta na próxima etapa imediata
           diaryContext = [];
           step = 0;
         }
       } else if (evaluation.pass) {
-        // solved a gap question
+        // resolveu uma pergunta de lacuna
         diaryContext.push(`
 At step ${step}, you took **answer** action. You found a good answer to the sub-question:
 
-Sub-question: 
+Sub-question:
 ${currentQuestion}
 
-Your answer: 
+Your answer:
 ${thisStep.answer}
 
-The evaluator thinks your answer is good because: 
+The evaluator thinks your answer is good because:
 ${evaluation.think}
 
 Although you solved a sub-question, you still need to find the answer to the original question. You need to keep going.
@@ -961,7 +1162,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
           type: "qa",
           updated: formatDateBasedOnType(new Date(), "full"),
         });
-        // solved sub-question!
+        // sub-pergunta resolvida!
         gaps.splice(gaps.indexOf(currentQuestion), 1);
       }
     } else if (thisStep.action === "reflect" && thisStep.questionsToAnswer) {
@@ -977,7 +1178,7 @@ Although you solved a sub-question, you still need to find the answer to the ori
       );
       const newGapQuestions = thisStep.questionsToAnswer;
       if (newGapQuestions.length > 0) {
-        // found new gap questions
+        // encontrou novas perguntas de lacunas
         diaryContext.push(`
 At step ${step}, you took **reflect** and think about the knowledge gaps. You found some sub-questions are important to the question: "${currentQuestion}"
 You realize you need to know the answers to the following sub-questions:
@@ -995,8 +1196,8 @@ You will now figure out the answers to these sub-questions and see if they can h
         diaryContext.push(`
 At step ${step}, you took **reflect** and think about the knowledge gaps. You tried to break down the question "${currentQuestion}" into gap-questions like this: ${newGapQuestions.join(
           ", "
-        )} 
-But then you realized you have asked them before. You decided to to think out of the box or cut from a completely different angle. 
+        )}
+But then you realized you have asked them before. You decided to to think out of the box or cut from a completely different angle.
 `);
         updateContext({
           totalStep,
@@ -1007,14 +1208,14 @@ But then you realized you have asked them before. You decided to to think out of
       }
       allowReflect = false;
     } else if (thisStep.action === "search" && thisStep.searchRequests) {
-      // dedup search requests
+      // deduplicar solicitações de pesquisa
       thisStep.searchRequests = chooseK(
         (await dedupQueries(thisStep.searchRequests, [], context.tokenTracker))
           .unique_queries,
         MAX_QUERIES_PER_STEP
       );
 
-      // do first search
+      // fazer primeira pesquisa
       const { searchedQueries, newKnowledge } = await executeSearchQueries(
         thisStep.searchRequests.map((q) => ({ q })),
         context,
@@ -1027,7 +1228,7 @@ But then you realized you have asked them before. You decided to to think out of
 
       const soundBites = newKnowledge.map((k) => k.answer).join(" ");
 
-      // rewrite queries with initial soundbites
+      // reescrever consultas com soundbites iniciais
       let keywordsQueries = await rewriteQuery(
         thisStep,
         soundBites,
@@ -1035,7 +1236,7 @@ But then you realized you have asked them before. You decided to to think out of
         SchemaGen
       );
       const qOnly = keywordsQueries.filter((q) => q.q).map((q) => q.q);
-      // avoid exisitng searched queries
+      // evitar consultas já pesquisadas
       const uniqQOnly = chooseK(
         (await dedupQueries(qOnly, allKeywords, context.tokenTracker))
           .unique_queries,
@@ -1043,7 +1244,7 @@ But then you realized you have asked them before. You decided to to think out of
       );
       keywordsQueries = keywordsQueries = uniqQOnly.map((q) => {
         const matches = keywordsQueries.filter((kq) => kq.q === q);
-        // if there are multiple matches, keep the original query as the wider search
+        // se houver várias correspondências, manter a consulta original como a busca mais ampla
         return matches.length > 1 ? { q } : matches[0];
       }) as SERPQuery[];
 
@@ -1068,7 +1269,7 @@ At step ${step}, you took the **search** action and look for external informatio
 In particular, you tried to search for the following keywords: "${keywordsQueries
             .map((q) => q.q)
             .join(", ")}".
-You found quite some information and add them to your URL list and **visit** them later when needed. 
+You found quite some information and add them to your URL list and **visit** them later when needed.
 `);
 
           updateContext({
@@ -1102,7 +1303,7 @@ You decided to think out of the box or cut from a completely different angle.
       thisStep.URLTargets?.length &&
       urlList?.length
     ) {
-      // normalize URLs
+      // normalizar URLs
       thisStep.URLTargets = (thisStep.URLTargets as number[])
         .map((idx) => normalizeUrl(urlList[idx - 1]))
         .filter((url) => url && !visitedURLs.includes(url)) as string[];
@@ -1223,7 +1424,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
 
   if (!(thisStep as AnswerAction).isFinal) {
     console.log("Enter Beast mode!!!");
-    // any answer is better than no answer, humanity last resort
+    // qualquer resposta é melhor que nenhuma resposta, último recurso da humanidade
     step++;
     totalStep++;
     const { system } = getPrompt(
@@ -1300,7 +1501,7 @@ But unfortunately, you failed to solve the issue. You need to think out of the b
 
   console.log(thisStep);
 
-  // max return 300 urls
+  // máximo de 300 urls retornadas
   const returnedURLs = weightedURLs.slice(0, numReturnedURLs).map((r) => r.url);
   return {
     result: thisStep,
