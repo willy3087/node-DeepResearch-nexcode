@@ -883,3 +883,164 @@ O sistema se destaca por:
 6. **API Compatível**: Implementação de uma API compatível com OpenAI para fácil integração.
 
 A estrutura de schemas bem definida e o sistema de tipos em TypeScript garantem consistência e confiabilidade, permitindo que o sistema execute tarefas complexas de busca e análise de informações de forma estruturada e eficiente.
+
+# Utilização da API MCP-connect
+
+Este documento descreve como utilizar a API MCP-connect implementada no projeto.
+
+## Endpoints da API
+
+A API oferece os seguintes endpoints:
+
+- `GET /health`: Endpoint de verificação de saúde
+- `POST /bridge`: Endpoint principal da ponte para receber requisições para o MCP
+
+## Como utilizar a API MCP
+
+### Inicialização
+
+Para utilizar o MCP em seu código, importe e inicialize o `MCPConnector`:
+
+```typescript
+import { MCPConnector } from "./agent";
+
+// Inicialize o conector MCP
+const mcpConnector = new MCPConnector(
+  "http://localhost:3001/bridge", // URL do endpoint bridge (opcional)
+  process.env.AUTH_TOKEN // Token de autenticação (opcional)
+);
+```
+
+### Listando ferramentas disponíveis
+
+Para listar as ferramentas disponíveis no servidor MCP:
+
+```typescript
+async function listarFerramentas() {
+  try {
+    // Parâmetros para o servidor MCP
+    const serverPath = "python"; // Caminho do executável do servidor
+    const args = ["/caminho/para/run_mcp.py", "--connection", "bridge"]; // Argumentos para o servidor
+    const env = { VARIAVEL_AMBIENTE: "valor" }; // Variáveis de ambiente (opcional)
+
+    // Listar ferramentas
+    const ferramentas = await mcpConnector.listTools(serverPath, args, env);
+    console.log("Ferramentas disponíveis:", ferramentas);
+
+    return ferramentas;
+  } catch (error) {
+    console.error("Erro ao listar ferramentas:", error);
+  }
+}
+```
+
+### Executando uma ferramenta
+
+Para executar uma ferramenta específica:
+
+```typescript
+async function executarFerramenta(
+  nomeFerramenta: string,
+  argumentos: Record<string, any>
+) {
+  try {
+    // Parâmetros para o servidor MCP
+    const serverPath = "python";
+    const args = ["/caminho/para/run_mcp.py", "--connection", "bridge"];
+    const env = { VARIAVEL_AMBIENTE: "valor" };
+
+    // Executar a ferramenta
+    const resultado = await mcpConnector.callTool(
+      nomeFerramenta,
+      argumentos,
+      serverPath,
+      args,
+      env
+    );
+
+    console.log(`Resultado da ferramenta ${nomeFerramenta}:`, resultado);
+    return resultado;
+  } catch (error) {
+    console.error(`Erro ao executar ferramenta ${nomeFerramenta}:`, error);
+  }
+}
+```
+
+### Exemplo de uso completo
+
+Aqui está um exemplo de uso completo:
+
+```typescript
+import { MCPConnector } from "./agent";
+
+async function exemploDeUso() {
+  const mcpConnector = new MCPConnector();
+
+  try {
+    // 1. Listar ferramentas disponíveis
+    const serverPath = "python";
+    const args = ["/caminho/para/run_mcp.py", "--connection", "bridge"];
+
+    const ferramentas = await mcpConnector.listTools(serverPath, args);
+    console.log("Ferramentas disponíveis:", ferramentas);
+
+    // Verificar se a ferramenta desejada está disponível
+    if (mcpConnector.isToolAvailable("search_repositories")) {
+      // 2. Executar a ferramenta
+      const resultado = await mcpConnector.callTool(
+        "search_repositories",
+        { query: "modelcontextprotocol" },
+        serverPath,
+        args
+      );
+
+      console.log("Resultado da busca:", resultado);
+    } else {
+      console.log("Ferramenta 'search_repositories' não disponível");
+    }
+  } catch (error) {
+    console.error("Erro na interação com MCP:", error);
+  }
+}
+
+exemploDeUso();
+```
+
+## Chamando diretamente o endpoint /bridge
+
+Se preferir, você pode chamar diretamente o endpoint `/bridge` usando uma biblioteca como axios:
+
+```typescript
+import axios from "axios";
+
+async function chamarMCP() {
+  try {
+    const response = await axios.post(
+      "http://localhost:3001/bridge",
+      {
+        method: "tools/list",
+        serverPath: "python",
+        args: ["/caminho/para/run_mcp.py", "--connection", "bridge"],
+        params: {},
+        env: {},
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.AUTH_TOKEN}`,
+        },
+      }
+    );
+
+    console.log("Ferramentas disponíveis:", response.data);
+  } catch (error) {
+    console.error("Erro ao chamar endpoint bridge:", error);
+  }
+}
+```
+
+## Configuração
+
+Certifique-se de definir as seguintes variáveis de ambiente:
+
+- `AUTH_TOKEN`: Token de autenticação para a API (opcional)
+- `MCP_SERVER_URL`: URL do servidor MCP-connect (padrão: http://localhost:3004/bridge)

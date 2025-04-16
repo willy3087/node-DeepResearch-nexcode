@@ -1,6 +1,33 @@
 // Action Types
 import { CoreMessage, LanguageModelUsage } from "ai";
 
+// MCP Integration types
+export interface MCPBridgeRequest {
+  method: "tools/list" | "tools/call";
+  serverPath: string;
+  args?: string[];
+  params: Record<string, any>;
+  env?: Record<string, string>;
+}
+
+export interface MCPToolInfo {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+}
+
+export interface MCPListToolsResponse {
+  tools: MCPToolInfo[];
+}
+
+export interface MCPCallToolResponse {
+  result: any;
+}
+
+export interface MCPError {
+  error: string;
+}
+
 type BaseAction = {
   action: "search" | "answer" | "reflect" | "visit" | "coding";
   think: string;

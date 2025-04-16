@@ -44,7 +44,6 @@ import {
 } from "./utils/url-tools";
 import {
   buildMdFromAnswer,
-  smartMergeStrings,
   chooseK,
   convertHtmlTablesToMd,
   fixCodeBlockIndentation,
@@ -62,7 +61,12 @@ import {
 import { formatDateBasedOnType, formatDateRange } from "./utils/date-tools";
 import { fixMarkdown } from "./tools/md-fixer";
 import { repairUnknownChars } from "./tools/broken-ch-fixer";
-import { jsonSchema } from "ai";
+import axios from "axios";
+import {
+  MCPBridgeRequest,
+  MCPListToolsResponse,
+  MCPCallToolResponse,
+} from "./types";
 
 /**
  * Função que pausa a execução por um determinado período de tempo.
@@ -241,7 +245,7 @@ function getPrompt(
   // Adicionar seção de cabeçalho
   sections.push(`Current date: ${new Date().toUTCString()}
 
-You are an advanced AI research agent from NexCode AI. You are specialized in multistep reasoning.
+You are an advanced AI research agent from NexCode AI. You are specialized in multistep reasoning and tools from MCP-connect endpoint for searching and using tools from designed by the user.
 Using your best knowledge, conversation with the user and lessons learned, answer the user question with absolute certainty, Um buscador curioso e muito experiente, consegue achar qualquer coisa na internet, procura até nos mínimos detalhes de pistas que possam te levar até a resposta correta. Suas respostas devem seguir estas regras:
 
 1. Use sempre português do Brasil nas respostas finais
@@ -284,7 +288,45 @@ Using your best knowledge, conversation with the user and lessons learned, answe
        • Exemplo prático
        • Observações relevantes
 
-6. EXERCÍCIO DE RACIOCÍNIO OBRIGATÓRIO em caso de perguntas que envolvam o assunto de classificão fiscal no brasil:
+6. Aplicação da Fórmula de Bháskara para Análise de Extremos:
+   - Aplique a fórmula do vértice da parábola para encontrar extremos:
+     "\\[
+     x_v = -\\frac{b}{2a} \\quad \\text{(ponto crítico)}
+     \\]"
+   - Calcule o valor correspondente:
+     "\\[
+     f(x_v) = -\\frac{\\Delta}{4a}
+     \\]"
+   - Discriminante: "\\(\\Delta = b^2 - 4ac\\)"
+
+7. IMPORTANTE:
+   - Use EXATAMENTE os nomes dos campos mostrados acima
+   - Para busca, use sempre "searchQuery" (não use "query")
+   - Inclua sempre o campo "think" explicando seu raciocínio
+   - Mantenha a estrutura exata do JSON
+   - NUNCA diga apenas "depende" ou "consulte um profissional", "preciso de mais informações", ou "não sei" a não ser que tenha como provar que está impossibilitado de seguir procurando, como por exemplo os dados que colheu e a relevância deles em dizer que ailo depende ou não existe ou não se sabe.
+   - NUNCA diga que não sabe a resposta, ou que não consegue responder.
+   - SEMPRE QUE CHEGAR A UM IMPARSE OU NAO SOUBER RESOLVER, revise o que sabe até o momento e tente reformular a query e procurar por novas urls para buscar mais informações.
+   - SEMPRE mostre todas as possibilidades que encontrou até o momento, não seja conservador, não seja pessimista, não seja preguiçoso.
+   - SEMPRE dê exemplos práticos, dê exemplos de como isso é usado na vida real, dê exemplos de como isso é usado no seu dia a dia, dê exemplos de como isso é usado no seu trabalho, dê exemplos de como isso é usado na sua empresa, dê exemplos de como isso é usado na sua equipe.
+   - SEMPRE cite a legislação (base legal, caso seja UM FATOR PRINCIPAL PARA A RESPOSTA)
+   - SEMPRE que não souber como acessar uma fonte, procure documentação da fonte ou use ferramentas de busca na internet para encontrar como acessar.
+   - SEMPRE buscar a lista de ferramentas disponíveis no endpoint /bridge e use as ferramentas disponíveis para resolver o problema.
+`);
+
+  // Adicionar contexto fiscal se a consulta for sobre temas fiscais
+  if (isFiscalQuery) {
+    sections.push(`
+<fiscal-context>
+Você é especialista em legislação fiscal e tributária brasileira. Para consultas fiscais:
+1. Priorize fontes oficiais (Receita Federal, Ministério da Fazenda, Planalto)
+2. Verifique a data das informações
+3. Para NCM, busque o código exato e justifique
+4. Especifique data e jurisdição para alíquotas
+5. Referencie decisões do CARF ou tribunais para interpretações complexas
+6. Considere exceções regionais (ICMS, ISS)
+7. Identifique divergências na legislação
+8. EXERCÍCIO DE RACIOCÍNIO OBRIGATÓRIO em caso de perguntas que envolvam o assunto de classificão fiscal no brasil:
                 Quando encontrar variações (por estado, regime, etc), você DEVE:
                 a) Primeiro listar TODAS as variáveis envolvidas
                     Exemplo: "Temos 3 estados × 2 regimes × 2 tipos de operação = 12 possibilidades"
@@ -316,44 +358,6 @@ Using your best knowledge, conversation with the user and lessons learned, answe
                     - Base legal
                     - Exemplo prático
                     - Observações relevantes
-
-7. Aplicação da Fórmula de Bháskara para Análise de Extremos:
-   - Aplique a fórmula do vértice da parábola para encontrar extremos:
-     "\\[
-     x_v = -\\frac{b}{2a} \\quad \\text{(ponto crítico)}
-     \\]"
-   - Calcule o valor correspondente:
-     "\\[
-     f(x_v) = -\\frac{\\Delta}{4a}
-     \\]"
-   - Discriminante: "\\(\\Delta = b^2 - 4ac\\)"
-
-8. IMPORTANTE:
-   - Use EXATAMENTE os nomes dos campos mostrados acima
-   - Para busca, use sempre "searchQuery" (não use "query")
-   - Inclua sempre o campo "think" explicando seu raciocínio
-   - Mantenha a estrutura exata do JSON
-   - NUNCA diga apenas "depende" ou "consulte um profissional", "preciso de mais informações", ou "não sei" a não ser que tenha como provar que está impossibilitado de seguir procurando, como por exemplo os dados que colheu e a relevância deles em dizer que ailo depende ou não existe ou não se sabe.
-   - NUNCA diga que não sabe a resposta, ou que não consegue responder.
-   - SEMPRE QUE CHEGAR A UM IMPARSE OU NAO SOUBER RESOLVER, revise o que sabe até o momento e tente reformular a query e procurar por novas urls para buscar mais informações.
-   - SEMPRE mostre todas as possibilidades que encontrou até o momento, não seja conservador, não seja pessimista, não seja preguiçoso.
-   - SEMPRE dê exemplos práticos, dê exemplos de como isso é usado na vida real, dê exemplos de como isso é usado no seu dia a dia, dê exemplos de como isso é usado no seu trabalho, dê exemplos de como isso é usado na sua empresa, dê exemplos de como isso é usado na sua equipe.
-   - SEMPRE cite a legislação (base legal, caso seja UM FATOR PRINCIPAL PARA A RESPOSTA)
-   - SEMPRE que não souber como acessar uma fonte, procure documentação da fonte ou use ferramentas de busca na internet para encontrar como acessar.
-`);
-
-  // Adicionar contexto fiscal se a consulta for sobre temas fiscais
-  if (isFiscalQuery) {
-    sections.push(`
-<fiscal-context>
-Você é especialista em legislação fiscal e tributária brasileira. Para consultas fiscais:
-1. Priorize fontes oficiais (Receita Federal, Ministério da Fazenda, Planalto)
-2. Verifique a data das informações
-3. Para NCM, busque o código exato e justifique
-4. Especifique data e jurisdição para alíquotas
-5. Referencie decisões do CARF ou tribunais para interpretações complexas
-6. Considere exceções regionais (ICMS, ISS)
-7. Identifique divergências na legislação
 </fiscal-context>
 `);
   }
@@ -574,6 +578,46 @@ ${actionSections.join("\n\n")}
   sections.push(
     `Think step by step, choose the action, then respond by matching the schema of that action.`
   );
+
+  // Adicionar descrição das ferramentas MCP disponíveis
+  sections.push(`
+<mcp-tools-available>
+Você tem acesso às seguintes ferramentas do GitHub via MCP (Model Context Protocol):
+
+- search_repositories: Buscar repositórios no GitHub
+- get_file_contents: Obter conteúdo de arquivos em repositórios
+- create_or_update_file: Criar ou atualizar arquivos em repositórios
+- list_commits: Listar commits de um repositório
+- create_pull_request: Criar pull requests
+- search_code: Buscar código em repositórios
+- list_issues: Listar issues de um repositório
+
+Para usar estas ferramentas, responda com a seguinte ação:
+{
+  "action": "mcp",
+  "think": "Vou buscar os repositórios do usuário",
+  "mcp": {
+    "toolName": "search_repositories",
+    "toolArgs": {
+      "query": "user:meu_usuario"
+    },
+    "serverPath": "npx",
+    "args": ["-y", "@modelcontextprotocol/server-github"]
+  }
+}
+  "Quando escolher a ação 'mcp', você DEVE obrigatoriamente preencher os campos 'toolName' e 'toolArgs' no objeto 'mcp', além de 'serverPath' e 'args' se necessário."
+</mcp-tools-available>
+  `);
+
+  // Adicionar às ações disponíveis
+  actionSections.push(`
+  <action-mcp>
+  - Use ferramentas GitHub para consultar, criar ou modificar repositórios
+  - Exemplos de uso:
+    - Listar repositórios: use "search_repositories" com query apropriada
+    - Obter conteúdo: use "get_file_contents" com owner, repo e path
+  </action-mcp>
+  `);
 
   return {
     system: removeExtraLineBreaks(sections.join("\n\n")),
@@ -1571,7 +1615,275 @@ ${JSON.stringify(zodToJsonSchema(schema), null, 2)}
   }
 }
 
+// Adicione a função initialize() antes da função main()
+/**
+ * Classe utilitária para interação com o MCP-connect via endpoint /bridge
+ */
+
+/**
+ * FERRAMENTAS GITHUB DISPONÍVEIS VIA MCP
+ * =======================================
+ *
+ * O MCP-connect permite acessar diversas ferramentas do GitHub para automação de repositórios.
+ * Para usar estas ferramentas, utilize o seguinte formato:
+ *
+ * // Iniciar o conector MCP
+ * const mcpConnector = new MCPConnector("http://localhost:3004/bridge");
+ *
+ * // Configurar parâmetros para o servidor GitHub
+ * const serverPath = "npx";
+ * const args = ["-y", "@modelcontextprotocol/server-github"];
+ * const env = {
+ *   GITHUB_PERSONAL_ACCESS_TOKEN: "seu_token_github_aqui"
+ * };
+ *
+ * // Listar ferramentas disponíveis
+ * const ferramentas = await mcpConnector.listTools(serverPath, args, env);
+ *
+ * // Buscar repositórios
+ * const resultadoBusca = await mcpConnector.callTool(
+ *   "search_repositories",
+ *   { query: "modelcontextprotocol" },
+ *   serverPath,
+ *   args,
+ *   env
+ * );
+ *
+ * // Criar ou atualizar arquivo
+ * const resultadoArquivo = await mcpConnector.callTool(
+ *   "create_or_update_file",
+ *   {
+ *     owner: "seuUsuario",
+ *     repo: "seuRepositorio",
+ *     path: "caminho/do/arquivo.md",
+ *     content: "Conteúdo do arquivo",
+ *     message: "Mensagem de commit",
+ *     branch: "main"
+ *   },
+ *   serverPath,
+ *   args,
+ *   env
+ * );
+ *
+ * O MCP-connect é compatível com diversos tipos de servidores:
+ * - Python: use serverPath="python" para servidores MCP escritos em Python
+ * - Node.js: use serverPath="node" para scripts JavaScript
+ * - NPX: use serverPath="npx" para pacotes npm como o GitHub MCP
+ * - TypeScript: use serverPath="npx" com args=["ts-node", "seu-script.ts"]
+ * - Qualquer executável: especifique o caminho para o executável desejado
+ *
+ * FERRAMENTAS DISPONÍVEIS:
+ * -----------------------
+ * - create_or_update_file: Criar ou atualizar arquivo no repositório
+ * - search_repositories: Buscar repositórios no GitHub
+ * - create_repository: Criar novo repositório
+ * - get_file_contents: Obter conteúdo de arquivo ou diretório
+ * - push_files: Enviar múltiplos arquivos em um único commit
+ * - create_issue: Criar nova issue no repositório
+ * - create_pull_request: Criar novo pull request
+ * - fork_repository: Fazer fork de um repositório
+ * - create_branch: Criar nova branch
+ * - list_commits: Listar commits de uma branch
+ * - list_issues: Listar issues com filtros
+ * - update_issue: Atualizar issue existente
+ * - add_issue_comment: Adicionar comentário a uma issue
+ * - search_code: Buscar código em repositórios
+ * - search_issues: Buscar issues e pull requests
+ * - search_users: Buscar usuários no GitHub
+ * - get_issue: Obter detalhes de uma issue específica
+ * - get_pull_request: Obter detalhes de um pull request
+ * - list_pull_requests: Listar pull requests com filtros
+ * - create_pull_request_review: Criar review em pull request
+ * - merge_pull_request: Fazer merge de pull request
+ * - get_pull_request_files: Listar arquivos alterados em PR
+ * - get_pull_request_status: Obter status de checks em PR
+ * - update_pull_request_branch: Atualizar branch de PR
+ * - get_pull_request_comments: Obter comentários de PR
+ * - get_pull_request_reviews: Obter reviews de PR
+ */
+export class MCPConnector {
+  private bridgeUrl: string;
+  private authToken?: string;
+  private availableTools: string[] = [];
+  private toolsLoaded: boolean = false;
+
+  /**
+   * Inicializa um conector MCP
+   * @param bridgeUrl URL do endpoint bridge (padrão: http://localhost:3004/bridge)
+   * @param authToken Token de autenticação opcional
+   */
+  constructor(bridgeUrl?: string, authToken?: string) {
+    this.bridgeUrl = bridgeUrl || "http://localhost:3004/bridge";
+    this.authToken = authToken || process.env.AUTH_TOKEN;
+  }
+
+  /**
+   * Lista as ferramentas disponíveis no servidor MCP
+   * @param serverPath Caminho ou comando para executar o servidor MCP (ex: "python", "node", "npx")
+   * @param args Argumentos para o servidor
+   * @param env Variáveis de ambiente
+   * @returns Lista de nomes das ferramentas disponíveis
+   *
+   * Exemplos:
+   * - Para servidores Python: listTools("python", ["/caminho/para/script.py", "--arg"])
+   * - Para pacotes npm: listTools("npx", ["-y", "@modelcontextprotocol/server-github"])
+   * - Para scripts TS: listTools("npx", ["ts-node", "script.ts"])
+   */
+  async listTools(
+    serverPath: string,
+    args: string[] = [],
+    env: Record<string, string> = {}
+  ): Promise<string[]> {
+    try {
+      const request: MCPBridgeRequest = {
+        method: "tools/list",
+        serverPath,
+        args,
+        params: {},
+        env,
+      };
+
+      const config = this.authToken
+        ? {
+            headers: { Authorization: `Bearer ${this.authToken}` },
+          }
+        : undefined;
+
+      const response = await axios.post<MCPListToolsResponse>(
+        this.bridgeUrl,
+        request,
+        config
+      );
+
+      this.availableTools = response.data.tools.map((tool) => tool.name);
+      this.toolsLoaded = true;
+
+      return this.availableTools;
+    } catch (error: any) {
+      console.error("Erro ao listar ferramentas MCP:", error.message);
+      throw new Error(`Falha ao listar ferramentas MCP: ${error.message}`);
+    }
+  }
+
+  /**
+   * Verifica se as ferramentas já foram carregadas e retorna a lista
+   * @returns Lista de ferramentas disponíveis
+   */
+  getAvailableTools(): string[] {
+    return this.availableTools;
+  }
+
+  /**
+   * Verifica se uma ferramenta específica está disponível
+   * @param toolName Nome da ferramenta a verificar
+   * @returns true se a ferramenta estiver disponível
+   */
+  isToolAvailable(toolName: string): boolean {
+    return this.availableTools.includes(toolName);
+  }
+
+  /**
+   * Executa uma ferramenta MCP
+   * @param toolName Nome da ferramenta a executar
+   * @param toolArgs Argumentos para a ferramenta
+   * @param serverPath Caminho ou comando para executar o servidor MCP (ex: "python", "node", "npx")
+   * @param args Argumentos para o servidor
+   * @param env Variáveis de ambiente
+   * @returns Resultado da execução da ferramenta
+   *
+   * Exemplos:
+   * - Para servidores Python: callTool("nome_da_ferramenta", {...}, "python", ["/caminho/para/script.py"])
+   * - Para pacotes npm: callTool("search_repositories", {...}, "npx", ["-y", "@modelcontextprotocol/server-github"])
+   * - Para scripts TS: callTool("nome_da_ferramenta", {...}, "npx", ["ts-node", "script.ts"])
+   */
+  async callTool(
+    toolName: string,
+    toolArgs: Record<string, any> = {},
+    serverPath: string,
+    args: string[] = [],
+    env: Record<string, string> = {}
+  ): Promise<any> {
+    try {
+      // Verificar se as ferramentas já foram carregadas
+      if (!this.toolsLoaded) {
+        await this.listTools(serverPath, args, env);
+      }
+
+      // Verificar se a ferramenta está disponível
+      if (!this.isToolAvailable(toolName)) {
+        throw new Error(
+          `Ferramenta '${toolName}' não disponível no servidor MCP`
+        );
+      }
+
+      const request: MCPBridgeRequest = {
+        method: "tools/call",
+        serverPath,
+        args,
+        params: {
+          name: toolName,
+          arguments: toolArgs,
+        },
+        env,
+      };
+
+      const config = this.authToken
+        ? {
+            headers: { Authorization: `Bearer ${this.authToken}` },
+          }
+        : undefined;
+
+      const response = await axios.post<MCPCallToolResponse>(
+        this.bridgeUrl,
+        request,
+        config
+      );
+
+      return response.data.result;
+    } catch (error: any) {
+      console.error(
+        `Erro ao executar ferramenta MCP '${toolName}':`,
+        error.message
+      );
+      throw new Error(
+        `Falha ao executar ferramenta MCP '${toolName}': ${error.message}`
+      );
+    }
+  }
+}
+console.log("Classe MCPConnector definida");
+
+export async function initialize() {
+  // Código existente
+
+  console.log("Antes de instanciar MCPConnector");
+  // Carregar ferramentas MCP disponíveis
+  const mcpConnector = new MCPConnector();
+  try {
+    // Tenta listar ferramentas GitHub
+    await mcpConnector.listTools(
+      "npx",
+      ["-y", "@modelcontextprotocol/server-github"],
+      { GITHUB_PERSONAL_ACCESS_TOKEN: process.env.GITHUB_TOKEN || "" }
+    );
+    console.log("Ferramentas MCP GitHub carregadas com sucesso");
+  } catch (error: unknown) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      "Não foi possível carregar ferramentas MCP GitHub:",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
+
+  // Resto do código
+}
+
+// Modifique a função main() para chamar initialize()
 export async function main() {
+  // Chame a função de inicialização primeiro
+  await initialize();
+
+  // Resto do código existente
   const question = process.argv[2] || "";
   const {
     result: finalStep,

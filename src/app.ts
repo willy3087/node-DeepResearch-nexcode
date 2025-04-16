@@ -1,4 +1,4 @@
-import express, { Request, Response, RequestHandler } from "express";
+import express, { Express, Request, Response, RequestHandler } from "express";
 import cors from "cors";
 import { getResponse } from "./agent";
 import {
@@ -10,18 +10,26 @@ import {
   Model,
   StepAction,
   VisitAction,
+  MCPBridgeRequest,
 } from "./types";
 import { TokenTracker } from "./utils/token-tracker";
 import { ActionTracker } from "./utils/action-tracker";
 import { ObjectGeneratorSafe } from "./utils/safe-generator";
 import { jsonSchema } from "ai"; // or another converter library
+import axios from "axios";
+import dotenv from "dotenv";
 
-const app = express();
+// Carregar variáveis de ambiente
+dotenv.config();
+
+const app: Express = express();
 
 // Get secret from command line args for optional authentication
 const secret = process.argv
   .find((arg) => arg.startsWith("--secret="))
   ?.split("=")[1];
+
+const authToken = process.env.AUTH_TOKEN || "";
 
 app.use(
   cors({
@@ -47,6 +55,68 @@ app.use(
 // Add health check endpoint for Docker container verification
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
+});
+
+// MCP Bridge endpoint
+app.post("/bridge", (req: Request, res: Response) => {
+  // Verificar autenticação se authToken estiver configurado
+  if (authToken) {
+    const authHeader = req.headers.authorization;
+    if (
+      !authHeader ||
+      !authHeader.startsWith("Bearer ") ||
+      authHeader.split(" ")[1] !== authToken
+    ) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+  }
+
+  const {
+    method,
+    serverPath,
+    args = [],
+    params = {},
+    env = {},
+  } = req.body as MCPBridgeRequest;
+
+  if (!method || !serverPath) {
+    res.status(400).json({
+      error: "Invalid request body. Required: method, serverPath",
+    });
+    return;
+  }
+
+  console.log(`[MCP Bridge] Recebida requisição ${method} para ${serverPath}`);
+
+  // URL do MCP-connect
+  const mcpConnectUrl =
+    process.env.MCP_SERVER_URL || "http://localhost:3004/bridge";
+
+  // Passar a requisição para o MCP-connect
+  axios
+    .post(mcpConnectUrl, {
+      method,
+      serverPath,
+      args,
+      params,
+      env,
+    })
+    .then((response) => {
+      console.log(`[MCP Bridge] Resposta recebida do servidor MCP`);
+      res.json(response.data);
+    })
+    .catch((error) => {
+      console.error("[MCP Bridge] Erro ao chamar MCP-connect:", error.message);
+
+      if (error.response) {
+        // Retornar a resposta de erro do MCP-connect
+        res.status(error.response.status).json(error.response.data);
+      } else {
+        // Erro de conexão ou outro erro
+        res.status(500).json({ error: "Failed to connect to MCP server" });
+      }
+    });
 });
 
 async function* streamTextNaturally(

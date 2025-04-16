@@ -319,6 +319,39 @@ export class Schemas {
   ): z.ZodObject<any> {
     const actionSchemas: Record<string, z.ZodOptional<any>> = {};
 
+    // Adicionar suporte para ferramentas MCP/GitHub
+    actionSchemas.mcp = z
+      .object({
+        toolName: z
+          .string()
+          .describe(
+            "Nome da ferramenta MCP a ser usada, por exemplo 'search_repositories', 'get_repository', 'create_or_update_file', etc."
+          )
+          .max(50)
+          .optional(),
+        toolArgs: z
+          .record(z.any())
+          .describe(
+            "Argumentos para a ferramenta MCP no formato de objeto JSON. Os argumentos variam de acordo com a ferramenta selecionada."
+          )
+          .optional(),
+        serverPath: z
+          .string()
+          .describe(
+            "Executável do servidor, geralmente 'npx' para ferramentas GitHub"
+          )
+          .default("npx")
+          .optional(),
+        args: z
+          .array(z.string())
+          .describe(
+            "Argumentos para o servidor, para GitHub: ['-y', '@modelcontextprotocol/server-github']"
+          )
+          .default(["-y", "@modelcontextprotocol/server-github"])
+          .optional(),
+      })
+      .optional();
+
     if (allowSearch) {
       actionSchemas.search = z
         .object({
