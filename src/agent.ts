@@ -1859,6 +1859,23 @@ export async function initialize() {
   console.log("Antes de instanciar MCPConnector");
   // Carregar ferramentas MCP disponíveis
   const mcpConnector = new MCPConnector();
+// Carregar ferramentas DeepResearchTool disponíveis
+const deepResearchToolConnector = new MCPConnector();
+try {
+  // Tenta listar ferramentas DeepResearchTool
+  await deepResearchToolConnector.listTools(
+    "zsh",
+    ["-c", "node ./deep-research-tool/index.js"],
+    {}
+  );
+  console.log("Ferramentas DeepResearchTool carregadas com sucesso");
+} catch (error: unknown) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "Não foi possível carregar ferramentas DeepResearchTool:",
+    error instanceof Error ? error.message : String(error)
+  );
+}
   try {
     // Tenta listar ferramentas GitHub
     await mcpConnector.listTools(

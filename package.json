@@ -1,7 +1,8 @@
 {
   "name": "node-deepresearch",
   "version": "1.0.0",
-  "main": "dist/app.js",
+  "main": "dist/agent.js",
+  "types": "dist/agent.d.ts",
   "files": [
     "dist",
     "README.md",
@@ -28,6 +29,7 @@
   "dependencies": {
     "@ai-sdk/google": "^1.2.11",
     "@ai-sdk/openai": "^1.3.13",
+    "@modelcontextprotocol/sdk": "^1.10.0",
     "ai": "^4.1.26",
     "axios": "^1.7.9",
     "commander": "^13.1.0",

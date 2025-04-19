@@ -9,7 +9,12 @@ console.log("DEBUG OPENROUTER_API_KEY:", process.env.OPENROUTER_API_KEY);
 console.log("DEBUG CWD:", process.cwd());
 
 // Types
-export type LLMProvider = "openai" | "gemini" | "vertex" | "openrouter";
+export type LLMProvider =
+  | "openai"
+  | "gemini"
+  | "vertex"
+  | "openrouter"
+  | "local";
 export type ToolName = keyof typeof configJson.models.gemini.tools;
 
 // Type definitions for our config structure
@@ -92,7 +97,8 @@ function isValidProvider(provider: string): provider is LLMProvider {
     provider === "openai" ||
     provider === "gemini" ||
     provider === "vertex" ||
-    provider === "openrouter"
+    provider === "openrouter" ||
+    provider === "local"
   );
 }
 
@@ -165,6 +171,15 @@ export function getModel(toolName: ToolName) {
     } as any;
 
     return createOpenAI(opt)(config.model);
+  }
+
+  if (LLM_PROVIDER === "local") {
+    const localConfig = configJson.providers.local?.clientConfig || {};
+    return createOpenAI({
+      baseURL: localConfig.baseURL || "http://localhost:1234/v1",
+      apiKey: localConfig.apiKey || "not-needed",
+      ...providerConfig?.clientConfig,
+    })(config.model);
   }
 
   if (LLM_PROVIDER === "vertex") {
