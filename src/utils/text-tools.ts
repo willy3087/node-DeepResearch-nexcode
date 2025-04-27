@@ -11,7 +11,7 @@ export function repairMarkdownFootnotes(
   references?: Array<Reference>
 ): string {
   // Standard footnote regex - handles [^1], [1^], and [1] formats
-  const footnoteRegex = /\[(\^(\d+)|(\d+)\^|(\d+))]/g;
+  const footnoteRegex = /\[(\^(\d+)|(\d+)\^|(\d+))\]/g;
 
   // Regex to catch grouped footnotes like [^1, ^2, ^3] or [^1,^2,^3]
   const groupedFootnoteRegex = /\[\^(\d+)(?:,\s*\^(\d+))+]/g;
@@ -40,7 +40,7 @@ export function repairMarkdownFootnotes(
 
   // First case: no references - remove any footnote citations
   if (!references?.length) {
-    return markdownString
+    return (markdownString || "")
       .replace(partialGroupedFootnoteRegex, (match) => {
         // Extract all numbers from the partially marked grouped footnote
         const numbers = match.match(/\d+/g) || [];
@@ -485,7 +485,7 @@ ${k.answer}
  */
 export function convertHtmlTablesToMd(mdString: string): string {
   try {
-    let result = mdString;
+    let result = mdString || "";
 
     // First check for HTML tables
     if (mdString.includes("<table>")) {

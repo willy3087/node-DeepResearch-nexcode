@@ -35,6 +35,7 @@ app.use(
   cors({
     origin: [
       "http://localhost:5173", // Frontend
+      "http://localhost:3000", // MCP
       "http://localhost:3001", // Node/Next
       "http://localhost:3002", // Node alternativo
       "http://localhost:3003", // Admin Panel

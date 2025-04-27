@@ -1,10 +1,10 @@
 [
   {
     "role": "user",
-    "content": "prompts usados no claud sonet 3.7"
+    "content": "Usar Docker para rodar LLM"
   },
   {
     "role": "user",
-    "content": "prompts usados no claud sonet 3.7"
+    "content": "Usar Docker para rodar LLM"
   }
 ]
