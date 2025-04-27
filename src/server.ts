@@ -1,6 +1,6 @@
 import app from "./app";
 
-const port = process.env.PORT || 3001;
+const port = process.env.PORT || 3002;
 
 // Export server startup function for better testing
 export function startServer() {
