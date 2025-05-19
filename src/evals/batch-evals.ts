@@ -2,11 +2,10 @@ import fs from 'fs/promises';
 import {exec} from 'child_process';
 import {promisify} from 'util';
 import {getResponse} from '../agent';
-import {generateObject} from 'ai';
-import {GEMINI_API_KEY} from '../config';
+import {getModel} from '../config';
 import {z} from 'zod';
 import {AnswerAction, TrackerContext} from "../types";
-import {createGoogleGenerativeAI} from "@ai-sdk/google";
+import { generateObject } from 'ai';
 
 const execAsync = promisify(exec);
 
@@ -92,7 +91,9 @@ async function getCurrentGitCommit(): Promise<string> {
   }
 }
 
+// Reescrita completa da função evaluateAnswer para evitar problemas de tipagem
 async function evaluateAnswer(expectedAnswer: string, actualAnswer: string): Promise<{ pass: boolean; reason: string }> {
+  // Definição do prompt para avaliação
   const prompt = `You are a deterministic evaluator with zero temperature. Compare the following expected answer with the actual answer and determine if they convey the same information.
 
 Expected answer: ${expectedAnswer}
@@ -100,26 +101,46 @@ Actual answer: ${actualAnswer}
 
 Minor wording differences are acceptable as long as the core information of the expected answer is preserved in the actual answer.'`;
 
+  // Definição do schema usando zod
   const schema = z.object({
     pass: z.boolean().describe('Whether the actual answer matches the expected answer'),
     reason: z.string().describe('Detailed explanation of why the evaluation passed or failed')
   });
 
   try {
-    const result = await generateObject({
-      model: createGoogleGenerativeAI({ apiKey: GEMINI_API_KEY })('gemini-2.0-flash'),  // fix to gemini-2.0-flash for evaluation
+    // Usando tipagem explícita 'any' para evitar problemas de inferência de tipo
+    const modelName: string = 'evaluator';
+    const modelInstance: any = getModel(modelName as any);
+
+    // Chamada para generateObject com tipagem explícita
+    type ResultType = {
+      object: {
+        pass: boolean;
+        reason: string;
+      }
+    };
+
+    // Usando tipagem explícita para evitar inferência complexa
+    const generateObjectParams: any = {
+      model: modelInstance,
       schema,
       prompt,
       maxTokens: 1000,
-      temperature: 0  // Setting temperature to 0 for deterministic output
-    });
+      temperature: 0
+    };
 
-    return result.object;
+    const result = await (generateObject as any)(generateObjectParams) as ResultType;
+
+    // Retorno explícito para garantir a tipagem correta
+    return {
+      pass: result.object.pass,
+      reason: result.object.reason
+    };
   } catch (error) {
     console.error('Evaluation failed:', error);
     return {
       pass: false,
-      reason: `Evaluation error: ${error}`
+      reason: `Evaluation error: ${error instanceof Error ? error.message : String(error)}`
     };
   }
 }

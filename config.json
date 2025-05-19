@@ -48,7 +48,7 @@
   "models": {
     "gemini": {
       "default": {
-        "model": "gemini-1.5-flash",
+        "model": "gemini-2.0-flash",
         "temperature": 0,
         "maxTokens": 2000
       },
@@ -122,9 +122,9 @@
   "available_models": {
     "gemini": [
       {
-        "name": "gemini-1.5-flash",
-        "displayName": "Gemini 1.5 Flash",
-        "description": "Modelo mais rápido da família Gemini 1.5",
+        "name": "gemini-2.0-flash",
+        "displayName": "Gemini 2.0 Flash",
+        "description": "Modelo mais rápido da família Gemini 2.0",
         "maxContextLength": 1000000,
         "supportsStreaming": true,
         "supportsJsonMode": true
