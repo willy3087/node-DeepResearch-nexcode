@@ -41,6 +41,7 @@ app.use(
       "http://localhost:3003", // Admin Panel
       "http://localhost:3004", // Navegação ao vivo
       "http://localhost:8080", // UI-Jina
+      "http://[::]:8080", // UI-Jina (IPv6)
     ],
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
@@ -496,6 +497,9 @@ app.post("/v1/chat/completions", (async (req: Request, res: Response) => {
     requestId: Date.now().toString(),
   });
 
+  // Log detalhado do modelo solicitado
+  console.log("[chat/completions] Modelo solicitado:", req.body.model);
+
   const body = req.body as ChatCompletionRequest;
   if (!body.messages?.length) {
     return res
@@ -673,6 +677,19 @@ app.post("/v1/chat/completions", (async (req: Request, res: Response) => {
   }
 
   try {
+    // Extrair o modelo da requisição
+    const requestedModel = body.model;
+    console.log(`Received request with model: ${requestedModel}`);
+
+    // Tratamento robusto para quando o modelo não é especificado
+    if (!requestedModel) {
+      console.warn("[chat/completions] Modelo não especificado na requisição. Usando modelo padrão.");
+    }
+
+    // Verificar se o modelo solicitado está configurado corretamente
+    const { LLM_PROVIDER } = require('./config');
+    console.log(`[chat/completions] Provedor LLM configurado: ${LLM_PROVIDER}`);
+
     const {
       result: finalStep,
       visitedURLs,
@@ -688,7 +705,8 @@ app.post("/v1/chat/completions", (async (req: Request, res: Response) => {
       body.no_direct_answer,
       body.boost_hostnames,
       body.bad_hostnames,
-      body.only_hostnames
+      body.only_hostnames,
+      requestedModel // Passar o modelo solicitado para getResponse
     );
     let finalAnswer = (finalStep as AnswerAction).mdAnswer;
 

@@ -113,15 +113,105 @@ interface ToolOverrides {
   maxTokens?: number;
 }
 
+// Função para verificar se um modelo existe na configuração
+// Função para encontrar o provedor de um modelo específico
+export function findModelProvider(model: string): LLMProvider | null {
+  if (!model) return null;
+
+  // Verificar em todos os provedores
+  for (const providerName of Object.keys(configJson.models)) {
+    if (providerName === "vertex") continue; // Pular "vertex" pois é um alias para "gemini"
+
+    const providerConfig = configJson.models[providerName as keyof typeof configJson.models];
+
+    // Verificar no modelo padrão
+    if (providerConfig.default.model === model) {
+      return providerName as LLMProvider;
+    }
+
+    // Verificar nas ferramentas
+    for (const tool of Object.values(providerConfig.tools)) {
+      if ((tool as any).model === model) {
+        return providerName as LLMProvider;
+      }
+    }
+  }
+
+  return null;
+}
+
+export function isValidModel(model: string): boolean {
+  // Se não houver modelo especificado, retornar true (usará o padrão)
+  if (!model) return true;
+
+  // Verificar em todos os provedores disponíveis
+  const allModels: string[] = [];
+
+  // Coletar todos os modelos de todos os provedores
+  Object.keys(configJson.models).forEach(providerName => {
+    if (providerName === "vertex") return; // Pular "vertex" pois é um alias para "gemini"
+
+    const providerConfig = configJson.models[providerName as keyof typeof configJson.models];
+
+    // Adicionar modelo padrão
+    allModels.push(providerConfig.default.model);
+
+    // Adicionar modelos das ferramentas
+    Object.values(providerConfig.tools)
+      .filter(tool => (tool as any).model)
+      .forEach(tool => allModels.push((tool as any).model));
+  });
+
+  // Remover duplicatas
+  const uniqueModels = [...new Set(allModels)];
+
+  console.log(`Validating model: ${model}. Available models: ${uniqueModels.join(', ')}`);
+
+  return uniqueModels.includes(model);
+}
+
 // Get tool configuration
-export function getToolConfig(toolName: ToolName): ToolConfig {
+export function getToolConfig(toolName: ToolName, requestedModel?: string): ToolConfig {
+  // Determinar qual provedor usar com base no modelo solicitado
+  let providerToUse = LLM_PROVIDER;
+  let modelToUse = requestedModel;
+
+  console.log(`[config] getToolConfig chamado com toolName: ${toolName}, requestedModel: ${requestedModel || 'não especificado'}`);
+
+  if (requestedModel) {
+    // Verificar se o modelo solicitado é válido
+    if (isValidModel(requestedModel)) {
+      // Encontrar o provedor do modelo solicitado
+      const modelProvider = findModelProvider(requestedModel);
+      if (modelProvider) {
+        providerToUse = modelProvider;
+        console.log(`[config] Usando provedor "${providerToUse}" para o modelo solicitado "${requestedModel}"`);
+      } else {
+        // Se não encontrou o provedor, usar o modelo mas manter o provedor atual
+        console.log(`[config] Provedor não encontrado para o modelo "${requestedModel}", usando provedor atual "${providerToUse}"`);
+      }
+    } else {
+      // Se o modelo não é válido, usar o modelo padrão
+      console.warn(`[config] Modelo solicitado "${requestedModel}" não é válido. Usando modelo padrão.`);
+      modelToUse = undefined;
+    }
+  } else {
+    console.log(`[config] Nenhum modelo específico solicitado, usando provedor padrão: ${providerToUse}`);
+  }
+
+  // Obter a configuração do provedor
   const providerConfig =
-    configJson.models[LLM_PROVIDER === "vertex" ? "gemini" : LLM_PROVIDER];
+    configJson.models[providerToUse === "vertex" ? "gemini" : providerToUse];
   const defaultConfig = providerConfig.default;
   const toolOverrides = providerConfig.tools[toolName] as ToolOverrides;
 
+  // Se não tiver um modelo válido, usar o padrão
+  if (!modelToUse) {
+    modelToUse = process.env.DEFAULT_MODEL_NAME || defaultConfig.model;
+  }
+
   return {
-    model: process.env.DEFAULT_MODEL_NAME || defaultConfig.model,
+    model: modelToUse,
     temperature: toolOverrides.temperature ?? defaultConfig.temperature,
     maxTokens: toolOverrides.maxTokens ?? defaultConfig.maxTokens,
   };
@@ -132,13 +222,26 @@ export function getMaxTokens(toolName: ToolName): number {
 }
 
 // Obtém a instância do modelo
-export function getModel(toolName: ToolName) {
-  const config = getToolConfig(toolName);
+export function getModel(toolName: ToolName, requestedModel?: string) {
+  const config = getToolConfig(toolName, requestedModel);
+
+  // Determinar qual provedor usar com base no modelo selecionado
+  let providerToUse = LLM_PROVIDER;
+
+  // Encontrar o provedor do modelo selecionado
+  const modelProvider = findModelProvider(config.model);
+  if (modelProvider) {
+    providerToUse = modelProvider;
+  }
+
   const providerConfig = (
     configJson.providers as Record<string, ProviderConfig | undefined>
-  )[LLM_PROVIDER];
+  )[providerToUse];
 
-  if (LLM_PROVIDER === "openai") {
+  // Log para debug do modelo selecionado
+  console.log(`Using model: ${config.model} (requested: ${requestedModel || 'none'}) with provider: ${providerToUse}`);
+
+  if (providerToUse === "openai") {
     if (!OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY not found");
     }
@@ -155,7 +258,7 @@ export function getModel(toolName: ToolName) {
     return createOpenAI(opt)(config.model);
   }
 
-  if (LLM_PROVIDER === "openrouter") {
+  if (providerToUse === "openrouter") {
     if (!OPENROUTER_API_KEY) {
       throw new Error("OPENROUTER_API_KEY not found");
     }
@@ -173,7 +276,7 @@ export function getModel(toolName: ToolName) {
     return createOpenAI(opt)(config.model);
   }
 
-  if (LLM_PROVIDER === "local") {
+  if (providerToUse === "local") {
     const localConfig = configJson.providers.local?.clientConfig || {};
     return createOpenAI({
       baseURL: localConfig.baseURL || "http://localhost:1234/v1",
@@ -182,7 +285,7 @@ export function getModel(toolName: ToolName) {
     })(config.model);
   }
 
-  if (LLM_PROVIDER === "vertex") {
+  if (providerToUse === "vertex") {
     const createVertex = require("@ai-sdk/google-vertex").createVertex;
     if (toolName === "searchGrounding") {
       return createVertex({
@@ -208,31 +311,46 @@ export function getModel(toolName: ToolName) {
   return createGoogleGenerativeAI({ apiKey: GEMINI_API_KEY })(config.model);
 }
 
-// Validate required environment variables
-if (LLM_PROVIDER === "gemini" && !GEMINI_API_KEY)
+// Função para validar as variáveis de ambiente necessárias para um provedor
+export function validateProviderEnv(provider: LLMProvider): void {
+  switch (provider) {
+    case "gemini":
+      if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not found");
+      break;
+    case "openai":
+      if (!OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not found");
+      break;
+    case "openrouter":
+      if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not found");
+      break;
+    case "local":
+      // Local provider não precisa de validação de API key
+      break;
+    case "vertex":
+      // Vertex usa as mesmas credenciais do Gemini
+      if (!process.env.GCLOUD_PROJECT) throw new Error("GCLOUD_PROJECT not found");
+      break;
+  }
+}
+
+// Validate required environment variables for default provider
+validateProviderEnv(LLM_PROVIDER);
+
+// Verificação adicional para GEMINI_API_KEY já que agora é o provedor padrão
+if (LLM_PROVIDER === "gemini" && !GEMINI_API_KEY) {
+  console.error("ERRO CRÍTICO: GEMINI_API_KEY não está configurada, mas o provedor padrão é 'gemini'");
+  console.error("Por favor, configure a variável de ambiente GEMINI_API_KEY");
   throw new Error("GEMINI_API_KEY not found");
-console.log(
-  "DEBUG antes do throw: env.OPENROUTER_API_KEY =",
-  env.OPENROUTER_API_KEY
-);
-console.log(
-  "DEBUG antes do throw: process.env.OPENROUTER_API_KEY =",
-  process.env.OPENROUTER_API_KEY
-);
-if (LLM_PROVIDER === "openai" && !OPENAI_API_KEY)
-  throw new Error("OPENAI_API_KEY not found");
-if (LLM_PROVIDER === "openrouter" && !OPENROUTER_API_KEY)
-  throw new Error("OPENROUTER_API_KEY not found");
+}
+
+// Sempre validar a API key do Jina, pois é usada para busca independente do provedor LLM
 if (!JINA_API_KEY) throw new Error("JINA_API_KEY not found");
 
 // Log all configurations
 const configSummary = {
   provider: {
     name: LLM_PROVIDER,
-    model:
-      LLM_PROVIDER === "openai"
-        ? configJson.models.openai.default.model
-        : configJson.models.gemini.default.model,
+    model: configJson.models[LLM_PROVIDER === "vertex" ? "gemini" : LLM_PROVIDER].default.model,
     ...(LLM_PROVIDER === "openai" && { baseUrl: OPENAI_BASE_URL }),
   },
   search: {
@@ -244,6 +362,20 @@ const configSummary = {
         .tools
     ).map((name) => [name, getToolConfig(name as ToolName)])
   ),
+  availableModels: Object.keys(configJson.models).reduce((acc, provider) => {
+    if (provider === "vertex") return acc; // Pular "vertex" pois é um alias para "gemini"
+
+    const providerConfig = configJson.models[provider as keyof typeof configJson.models];
+    const models = [
+      providerConfig.default.model,
+      ...Object.values(providerConfig.tools)
+        .filter(tool => (tool as any).model)
+        .map(tool => (tool as any).model)
+    ];
+
+    acc[provider] = [...new Set(models)];
+    return acc;
+  }, {} as Record<string, string[]>),
   defaults: {
     stepSleep: STEP_SLEEP,
   },

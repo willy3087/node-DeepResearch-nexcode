@@ -92,7 +92,7 @@ async function getCurrentGitCommit(): Promise<string> {
 }
 
 // Reescrita completa da função evaluateAnswer para evitar problemas de tipagem
-async function evaluateAnswer(expectedAnswer: string, actualAnswer: string): Promise<{ pass: boolean; reason: string }> {
+async function evaluateAnswer(expectedAnswer: string, actualAnswer: string, requestedModel?: string): Promise<{ pass: boolean; reason: string }> {
   // Definição do prompt para avaliação
   const prompt = `You are a deterministic evaluator with zero temperature. Compare the following expected answer with the actual answer and determine if they convey the same information.
 
@@ -110,7 +110,8 @@ Minor wording differences are acceptable as long as the core information of the 
   try {
     // Usando tipagem explícita 'any' para evitar problemas de inferência de tipo
     const modelName: string = 'evaluator';
-    const modelInstance: any = getModel(modelName as any);
+    // Passar o modelo solicitado para getModel, se disponível
+    const modelInstance: any = getModel(modelName as any, requestedModel);
 
     // Chamada para generateObject com tipagem explícita
     type ResultType = {
@@ -145,7 +146,7 @@ Minor wording differences are acceptable as long as the core information of the 
   }
 }
 
-async function batchEvaluate(inputFile: string): Promise<void> {
+async function batchEvaluate(inputFile: string, requestedModel?: string): Promise<void> {
   // Read and parse input file
   const questions: Question[] = JSON.parse(await fs.readFile(inputFile, 'utf-8'));
   const results: EvaluationResult[] = [];
@@ -163,7 +164,19 @@ async function batchEvaluate(inputFile: string): Promise<void> {
       const {
         result: response,
         context
-      } = await getResponse(question) as { result: AnswerAction; context: TrackerContext };
+      } = await getResponse(
+        question,
+        undefined, // tokenBudget (default)
+        undefined, // maxBadAttempts (default)
+        undefined, // existingContext (default)
+        undefined, // messages (default)
+        undefined, // numReturnedURLs (default)
+        undefined, // noDirectAnswer (default)
+        undefined, // boostHostnames (default)
+        undefined, // badHostnames (default)
+        undefined, // onlyHostnames (default)
+        requestedModel // Passar o modelo solicitado
+      ) as { result: AnswerAction; context: TrackerContext };
 
       // Get response using the streaming agent
       // const {
@@ -174,7 +187,7 @@ async function batchEvaluate(inputFile: string): Promise<void> {
       const actualAnswer = response.answer;
 
       // Evaluate the response
-      const evaluation = await evaluateAnswer(expectedAnswer, actualAnswer);
+      const evaluation = await evaluateAnswer(expectedAnswer, actualAnswer, requestedModel);
 
       // Record results
       results.push({
@@ -219,12 +232,15 @@ async function batchEvaluate(inputFile: string): Promise<void> {
 // Run batch evaluation if this is the main module
 if (require.main === module) {
   const inputFile = process.argv[2];
+  const requestedModel = process.argv[3]; // Obter o modelo solicitado da linha de comando
+
   if (!inputFile) {
     console.error('Please provide an input file path');
     process.exit(1);
   }
 
-  batchEvaluate(inputFile).catch(console.error);
+  console.log(`Running batch evaluation with model: ${requestedModel || 'default'}`);
+  batchEvaluate(inputFile, requestedModel).catch(console.error);
 }
 
 export {batchEvaluate};

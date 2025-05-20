@@ -801,7 +801,8 @@ export async function getResponse(
   noDirectAnswer: boolean = false,
   boostHostnames: string[] = [],
   badHostnames: string[] = [],
-  onlyHostnames: string[] = []
+  onlyHostnames: string[] = [],
+  requestedModel?: string // Novo parâmetro para o modelo solicitado
 ): Promise<{
   result: StepAction;
   context: TrackerContext;
@@ -989,12 +990,16 @@ export async function getResponse(
 
     let result;
     try {
+      // Log detalhado do modelo solicitado
+      console.log(`[agent] Usando modelo solicitado: ${requestedModel || 'padrão'}`);
+
       result = await generator.generateObject({
         model: "agent",
         schema,
         system,
         messages: msgWithKnowledge,
         numRetries: 2,
+        requestedModel, // Passar o modelo solicitado para o gerador
       });
       thisStep = {
         action: result.object.action,

@@ -3,17 +3,17 @@ import {getModel} from "../config";
 import { GoogleGenerativeAIProviderMetadata } from '@ai-sdk/google';
 import {TokenTracker} from "../utils/token-tracker";
 
-const model = getModel('searchGrounding')
-
-export async function grounding(query: string, tracker?: TokenTracker): Promise<string> {
+export async function grounding(query: string, tracker?: TokenTracker, requestedModel?: string): Promise<string> {
+  // Obter o modelo com base no parâmetro requestedModel
+  const model = getModel('searchGrounding', requestedModel);
   try {
     const { text, experimental_providerMetadata, usage } = await generateText({
       model,
       prompt:
-      `Current date is ${new Date().toISOString()}. Find the latest answer to the following question: 
+      `Current date is ${new Date().toISOString()}. Find the latest answer to the following question:
 <query>
 ${query}
-</query>      
+</query>
 Must include the date and time of the latest answer.`,
     });
 

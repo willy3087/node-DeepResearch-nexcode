@@ -5,7 +5,7 @@ import {TrackerContext} from "../types";
 /**
  * Repairs markdown content with � characters by using Gemini to guess the missing text
  */
-export async function repairUnknownChars(mdContent: string, trackers: TrackerContext): Promise<string> {
+export async function repairUnknownChars(mdContent: string, trackers: TrackerContext, requestedModel?: string): Promise<string> {
   if (!mdContent.includes('�')) return mdContent;
 
   let repairedContent = mdContent;
@@ -51,8 +51,8 @@ export async function repairUnknownChars(mdContent: string, trackers: TrackerCon
     // Ask Gemini to guess the missing characters
     try {
       const result = await generateText({
-        model: getModel('fallback'),
-        system: `You're helping fix a corrupted scanned markdown document that has stains (represented by �). 
+        model: getModel('fallback', requestedModel),
+        system: `You're helping fix a corrupted scanned markdown document that has stains (represented by �).
 Looking at the surrounding context, determine the original text should be in place of the � symbols.
 
 Rules:

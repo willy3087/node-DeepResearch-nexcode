@@ -22,6 +22,7 @@ interface GenerateOptions<T> {
   system?: string;
   messages?: CoreMessage[];
   numRetries?: number;
+  requestedModel?: string; // Novo parâmetro para o modelo solicitado pelo cliente
 }
 
 export class ObjectGeneratorSafe {
@@ -139,7 +140,7 @@ export class ObjectGeneratorSafe {
   async generateObject<T>(
     options: GenerateOptions<T>
   ): Promise<GenerateObjectResult<T>> {
-    const { model, schema, prompt, system, messages, numRetries = 0 } = options;
+    const { model, schema, prompt, system, messages, numRetries = 0, requestedModel } = options;
 
     if (!model || !schema) {
       throw new Error("Model and schema are required parameters");
@@ -148,13 +149,13 @@ export class ObjectGeneratorSafe {
     try {
       // Primary attempt with main model
       const result = await generateObject({
-        model: getModel(model),
+        model: getModel(model, requestedModel),
         schema,
         prompt,
         system,
         messages,
-        maxTokens: getToolConfig(model).maxTokens,
-        temperature: getToolConfig(model).temperature,
+        maxTokens: getToolConfig(model, requestedModel).maxTokens,
+        temperature: getToolConfig(model, requestedModel).temperature,
       });
 
       this.tokenTracker.trackUsage(model, result.usage);
@@ -179,6 +180,7 @@ export class ObjectGeneratorSafe {
             system,
             messages,
             numRetries: numRetries - 1,
+            requestedModel,
           });
         } else {
           // Second fallback: Try with fallback model if provided
@@ -201,7 +203,7 @@ export class ObjectGeneratorSafe {
             const distilledSchema = this.createDistilledSchema(schema);
 
             const fallbackResult = await generateObject({
-              model: getModel("fallback"),
+              model: getModel("fallback", requestedModel),
               schema: distilledSchema,
               prompt: `Following the given JSON schema, extract the field from below: \n\n ${failedOutput}`,
               maxTokens: getToolConfig("fallback").maxTokens,
