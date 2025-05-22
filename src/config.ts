@@ -192,6 +192,7 @@ export function getToolConfig(toolName: ToolName, requestedModel?: string): Tool
       }
     } else {
       // Se o modelo não é válido, usar o modelo padrão
+      // eslint-disable-next-line no-console
       console.warn(`[config] Modelo solicitado "${requestedModel}" não é válido. Usando modelo padrão.`);
       modelToUse = undefined;
     }

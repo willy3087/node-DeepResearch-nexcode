@@ -683,11 +683,14 @@ app.post("/v1/chat/completions", (async (req: Request, res: Response) => {
 
     // Tratamento robusto para quando o modelo não é especificado
     if (!requestedModel) {
-      console.warn("[chat/completions] Modelo não especificado na requisição. Usando modelo padrão.");
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[chat/completions] Modelo não especificado na requisição. Usando modelo padrão."
+      );
     }
 
     // Verificar se o modelo solicitado está configurado corretamente
-    const { LLM_PROVIDER } = require('./config');
+    const { LLM_PROVIDER } = require("./config");
     console.log(`[chat/completions] Provedor LLM configurado: ${LLM_PROVIDER}`);
 
     const {
